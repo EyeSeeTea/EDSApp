@@ -41,6 +41,7 @@ import com.raizlabs.android.dbflow.sql.language.Select;
 import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.database.model.Program;
 import org.eyeseetea.malariacare.database.model.Survey;
+import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
 import org.eyeseetea.malariacare.database.utils.planning.PlannedItem;
 import org.eyeseetea.malariacare.layout.adapters.filters.FilterProgramArrayAdapter;
@@ -54,7 +55,7 @@ import java.util.List;
 /**
  * Created by ivan.arrizabalaga on 15/12/2015.
  */
-public class PlannedFragment extends ListFragment {
+public class PlannedFragment extends ListFragment implements IModuleFragment{
     public static final String TAG = ".PlannedFragment";
 
     private PlannedItemsReceiver plannedItemsReceiver;
@@ -76,7 +77,7 @@ public class PlannedFragment extends ListFragment {
     public void onCreate(Bundle savedInstanceState){
         Log.d(TAG, "onCreate");
         super.onCreate(savedInstanceState);
-        programDefaultOption = new Program(getResources().getString(R.string.all_assessment).toUpperCase());
+        programDefaultOption = new Program(getResources().getString(R.string.filter_all_org_assessments).toUpperCase());
     }
 
     @Override
@@ -108,8 +109,8 @@ public class PlannedFragment extends ListFragment {
         programSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                Spinner spinner=((Spinner) parent);
-                Program selectedProgram=position==0?null:(Program)spinner.getItemAtPosition(position);
+                Spinner spinner = ((Spinner) parent);
+                Program selectedProgram = position == 0 ? null : (Program) spinner.getItemAtPosition(position);
                 ((TextView) parent.getChildAt(0)).setTextColor(Color.WHITE);
                 adapter.applyFilter(selectedProgram);
             }
@@ -171,13 +172,15 @@ public class PlannedFragment extends ListFragment {
         }
     }
 
-    public void reloadPlannedItems(){
+    @Override
+    public void reloadData(){
         reloadPlannedItems((List<PlannedItem>) Session.popServiceValue(SurveyService.PLANNED_SURVEYS_ACTION));
     }
 
     public void reloadPlannedItems(List<PlannedItem> plannedItemList) {
+        if(adapter!=null && plannedItemList!=null){
         adapter.reloadItems(plannedItemList);
-        setListShown(true);
+        setListShown(true);}
     }
 
     /**
@@ -196,7 +199,7 @@ public class PlannedFragment extends ListFragment {
                 prepareUI();
             }
             if (SurveyService.PLANNED_SURVEYS_ACTION.equals(intent.getAction())) {
-                reloadPlannedItems();
+                reloadData();
             }
         }
     }

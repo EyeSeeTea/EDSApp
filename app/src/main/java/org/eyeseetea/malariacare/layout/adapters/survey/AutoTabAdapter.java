@@ -21,17 +21,21 @@ package org.eyeseetea.malariacare.layout.adapters.survey;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.res.ColorStateList;
+import android.graphics.PorterDuff;
+import android.os.Build;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
 import android.widget.AdapterView;
+import android.widget.CompoundButton;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
 import android.widget.Spinner;
-
-import com.raizlabs.android.dbflow.structure.BaseModel;
+import android.widget.Switch;
 
 import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.database.model.Header;
@@ -41,54 +45,78 @@ import org.eyeseetea.malariacare.database.model.Tab;
 import org.eyeseetea.malariacare.database.model.Value;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.ReadWriteDB;
+import org.eyeseetea.malariacare.layout.adapters.general.OptionArrayAdapter;
 import org.eyeseetea.malariacare.layout.score.ScoreRegister;
+import org.eyeseetea.malariacare.layout.utils.AutoTabInVisibilityState;
 import org.eyeseetea.malariacare.layout.utils.AutoTabLayoutUtils;
+import org.eyeseetea.malariacare.layout.utils.AutoTabSelectedItem;
+import org.eyeseetea.malariacare.layout.utils.AutoTabViewHolder;
+import org.eyeseetea.malariacare.layout.utils.LayoutUtils;
+import org.eyeseetea.malariacare.layout.utils.QuestionRow;
 import org.eyeseetea.malariacare.utils.Constants;
 import org.eyeseetea.malariacare.views.CustomEditText;
 import org.eyeseetea.malariacare.views.CustomRadioButton;
 import org.eyeseetea.malariacare.views.CustomTextView;
 import org.eyeseetea.malariacare.views.filters.MinMaxInputFilter;
 
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Created by Jose on 21/04/2015.
- */
+
 public class AutoTabAdapter extends ATabAdapter {
 
     private final static String TAG=".AutoTabAdapter";
 
     final AutoTabLayoutUtils.ScoreHolder scoreHolder = new AutoTabLayoutUtils.ScoreHolder();
 
-    float totalNum = 0;
     float totalDenum;
 
-    // The length of this arrays is the same that the items list. Each position indicates if the item
-    // on this position is hidden (true) or visible (false)
-    private final LinkedHashMap<BaseModel, Boolean> elementInvisibility = new LinkedHashMap<>();
+    /**
+     * Reference to the visibility state of items
+     */
+    private final AutoTabInVisibilityState inVisibilityState;
 
-    public AutoTabAdapter(Tab tab, Context context) {
-        this(tab, context, R.layout.form_with_score);
-    }
+    /**
+     * Factory that holds common info between selected items
+     */
+    private final AutoTabSelectedItem autoTabSelectedItemFactory;
 
     public AutoTabAdapter(Tab tab, Context context, int id_layout) {
         super(tab, context, id_layout);
 
+        this.inVisibilityState = new AutoTabInVisibilityState();
+        this.autoTabSelectedItemFactory = new AutoTabSelectedItem(this,this.inVisibilityState);
+
         // Initialize the elementInvisibility HashMap by reading all questions and headers and decide
         // whether or not they must be visible
         for (int i = 0; i < getItems().size(); i++) {
-            BaseModel item = getItems().get(i);
-            if (item instanceof Header)
-                elementInvisibility.put(item, true);
+            Object item = getItems().get(i);
+
+            //Header are visible by default
+            if (item instanceof Header) {
+                inVisibilityState.initVisibility((Header) item);
+            }
+
+            //Question might be visible or not (according to parent values)
             if (item instanceof Question) {
-                boolean hidden = AutoTabLayoutUtils.isHidden((Question) item);
-                elementInvisibility.put(item, hidden);
-                if (!(hidden)) AutoTabLayoutUtils.initScoreQuestion((Question) item, totalNum, totalDenum);
-                else ScoreRegister.addRecord((Question) item, 0F, ScoreRegister.calcDenum((Question) item));
-                Header header = ((Question) item).getHeader();
-                boolean headerVisibility = elementInvisibility.get(header);
-                elementInvisibility.put(header, headerVisibility && elementInvisibility.get(item));
+                boolean visible = inVisibilityState.initVisibility((Question) item);
+                if (visible){
+                    AutoTabLayoutUtils.initScoreQuestion((Question) item);
+                }else{
+                    ScoreRegister.addRecord((Question) item, 0F, ScoreRegister.calcDenum((Question) item));
+                }
+                inVisibilityState.updateHeaderVisibility((Question) item);
+            }
+
+            //QuestionRow visibility equals first Question
+            if (item instanceof QuestionRow){
+                boolean visible = inVisibilityState.initVisibility((QuestionRow)item);
+                if (visible){
+                    AutoTabLayoutUtils.initScoreQuestion((QuestionRow) item);
+                }else{
+                    ScoreRegister.addQuestionRowRecords((QuestionRow) item);
+                }
+                inVisibilityState.updateHeaderVisibility((QuestionRow) item);
             }
         }
     }
@@ -113,7 +141,6 @@ public class AutoTabAdapter extends ATabAdapter {
         initializeScoreViews();
         setSubScoreVisibility();
         initializeDenum();
-        AutoTabLayoutUtils.updateScore(scoreHolder, totalNum, totalDenum, getContext());
     }
 
     /**
@@ -132,8 +159,7 @@ public class AutoTabAdapter extends ATabAdapter {
      */
     private void setSubScoreVisibility(){
         ViewGroup subscoreBar = (ViewGroup) ((Activity)getContext()).findViewById(R.id.subscore_bar);
-        int visibility = (PreferencesState.getInstance().isShowNumDen()) ? View.VISIBLE : View.GONE;
-        subscoreBar.setVisibility(visibility);
+        subscoreBar.setVisibility(View.GONE);
     }
 
 
@@ -143,12 +169,13 @@ public class AutoTabAdapter extends ATabAdapter {
 
         if (totalDenum == 0) {
             for (int i = 0; i < number_items; i++) {
-                if (getItems().get(i) instanceof Question && !elementInvisibility.get(getItems().get(i))) {
-                    Question question = (Question) getItems().get(i);
-                    if (question.getOutput() == Constants.DROPDOWN_LIST)
-                        result = result + ScoreRegister.calcDenum((Question) getItems().get(i));
+                Object item=getItems().get(i);
+                if ( item instanceof Question && inVisibilityState.isVisible(item)) {
+                    Question question = (Question) item;
+                    if (question.getOutput() == Constants.DROPDOWN_LIST) {
+                        result = result + ScoreRegister.calcDenum(question);
+                    }
                 }
-
             }
             totalDenum = result;
 
@@ -157,17 +184,18 @@ public class AutoTabAdapter extends ATabAdapter {
 
     @Override
     public int getCount() {
-        return (getItems().size() - AutoTabLayoutUtils.getHiddenCount(elementInvisibility));
+        return (getItems().size() - inVisibilityState.countInvisible());
     }
 
     @Override
     public Object getItem(int position) {
-        return getItems().get(AutoTabLayoutUtils.getRealPosition(position, elementInvisibility, getItems()));
+        return getItems().get(inVisibilityState.getRealPosition(position,getItems()));
     }
 
     @Override
     public long getItemId(int position) {
-        return getItems().get(AutoTabLayoutUtils.getRealPosition(position, elementInvisibility, getItems())).hashCode();
+        Object obj=getItem(position);
+        return obj.hashCode();
     }
 
     @Override
@@ -176,96 +204,277 @@ public class AutoTabAdapter extends ATabAdapter {
 
         final Object item = getItem(position);
         Question question;
-        AutoTabLayoutUtils.ViewHolder viewHolder = new AutoTabLayoutUtils.ViewHolder();
+        AutoTabViewHolder viewHolder = new AutoTabViewHolder();
 
         if (item instanceof Question) {
             question = (Question) item;
-
-            //FIXME This should be moved into its own class (Ex: ViewHolderFactory.getView(item))
-            switch (question.getOutput()) {
-
-                case Constants.LONG_TEXT:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.longtext, parent, question, viewHolder, position, getInflater());
-                    //Add main component and listener
-                    ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(false, question));
-                    break;
-                case Constants.NO_ANSWER:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.label, parent, question, viewHolder, position, getInflater());
-                    break;
-                case Constants.POSITIVE_INT:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.integer, parent, question, viewHolder, position, getInflater());
-                    //Add main component, set filters and listener
-                    ((CustomEditText) viewHolder.component).setFilters(new InputFilter[]{new InputFilter.LengthFilter(Constants.MAX_INT_CHARS),new MinMaxInputFilter(1, null)});
-                    ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(false, question));
-                    break;
-                case Constants.INT:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.integer, parent, question, viewHolder, position, getInflater());
-                    //Add main component, set filters and listener
-                    ((CustomEditText) viewHolder.component).setFilters(new InputFilter[]{new InputFilter.LengthFilter(Constants.MAX_INT_CHARS)});
-                    ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(false, question));
-                    break;
-                case Constants.DATE:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.date, parent, question, viewHolder, position, getInflater());
-                    //Add main component and listener
-                    ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(false, question));
-                    break;
-
-                case Constants.SHORT_TEXT:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.shorttext, parent, question, viewHolder, position, getInflater());
-                    //Add main component and listener
-                    ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(false, question));
-                    break;
-
-                case Constants.DROPDOWN_LIST:
-                    rowView = AutoTabLayoutUtils.initialiseDropDown(position, parent, question, viewHolder, getInflater(), getContext());
-                    // Initialise Listener
-                    ((Spinner) viewHolder.component).setOnItemSelectedListener(new SpinnerListener(false, question, viewHolder));
-                    break;
-                case Constants.DROPDOWN_LIST_DISABLED:
-                    rowView = AutoTabLayoutUtils.initialiseDropDown(position, parent, question, viewHolder, getInflater(), getContext());
-                    // Initialise value depending on match question
-                    AutoTabLayoutUtils.autoFillAnswer(viewHolder, scoreHolder, question, totalNum, totalDenum, getContext(), elementInvisibility);
-                    break;
-                case Constants.RADIO_GROUP_HORIZONTAL:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.radio, parent, question, viewHolder, position, getInflater());
-                    AutoTabLayoutUtils.initialiseScorableComponent(rowView, viewHolder);
-                    AutoTabLayoutUtils.createRadioGroupComponent(question, viewHolder, LinearLayout.HORIZONTAL, getInflater(), getContext());
-                    //Add Listener
-                    ((RadioGroup) viewHolder.component).setOnCheckedChangeListener(new RadioGroupListener(question, viewHolder));
-                    break;
-                case Constants.RADIO_GROUP_VERTICAL:
-                    rowView = AutoTabLayoutUtils.initialiseView(R.layout.radio, parent, question, viewHolder, position, getInflater());
-                    AutoTabLayoutUtils.initialiseScorableComponent(rowView, viewHolder);
-                    AutoTabLayoutUtils.createRadioGroupComponent(question, viewHolder, LinearLayout.VERTICAL, getInflater(), getContext());
-                    //Add Listener
-                    ((RadioGroup) viewHolder.component).setOnCheckedChangeListener(new RadioGroupListener(question, viewHolder));
-                    break;
-
-                default:
-                    break;
-            }
+            rowView = getView(position, parent, rowView, question, viewHolder);
 
             //Put current value in the component
             setValues(viewHolder, question);
 
             //Disables component if survey has already been sent (except match spinner that are always disabled)
-            if(question.getOutput()==Constants.DROPDOWN_LIST_DISABLED){
-                AutoTabLayoutUtils.updateReadOnly(viewHolder.component, true);
-            }else{
-                AutoTabLayoutUtils.updateReadOnly(viewHolder.component, getReadOnly());
-            }
+            AutoTabLayoutUtils.updateReadOnly(viewHolder.component, question, getReadOnly());
 
-        } else {
+        } else if(item instanceof Header){
             rowView = getInflater().inflate(R.layout.headers, parent, false);
             viewHolder.statement = (CustomTextView) rowView.findViewById(R.id.headerName);
             viewHolder.statement.setText(((Header) item).getName());
-
+        }else{
+            QuestionRow questionRow = (QuestionRow)item;
+            rowView = getRowView(position,parent,questionRow,viewHolder);
+            //Put current values in components
+            setValues(viewHolder,questionRow);
+            //Disable components whenever required
+            AutoTabLayoutUtils.updateReadOnly(viewHolder,questionRow,getReadOnly());
         }
 
         return rowView;
     }
 
-    public void setValues(AutoTabLayoutUtils.ViewHolder viewHolder, Question question) {
+    private View getRowView(int position,ViewGroup parent,QuestionRow questionRow, AutoTabViewHolder viewHolder){
+        View rowView = getInflater().inflate(R.layout.question_row,parent,false);
+        if(questionRow.isCustomTabTableHeader()){
+            getViewTableHeader((LinearLayout) rowView, questionRow);
+        }else{
+            getViewTableContent((LinearLayout)rowView,questionRow, viewHolder);
+            rowView.setBackgroundResource(LayoutUtils.calculateBackgrounds(position));
+        }
+        return  rowView;
+    }
+
+    private View getView(int position, ViewGroup parent, View rowView, Question question, AutoTabViewHolder viewHolder) {
+        //FIXME This should be moved into its own class (Ex: ViewHolderFactory.getView(item))
+        switch (question.getOutput()) {
+
+            case Constants.LONG_TEXT:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.longtext, parent, question, viewHolder, position, getInflater());
+                //Add main component and listener
+                ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(question));
+                break;
+            case Constants.NO_ANSWER:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.label, parent, question, viewHolder, position, getInflater());
+                break;
+            case Constants.POSITIVE_INT:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.integer, parent, question, viewHolder, position, getInflater());
+                //Add main component, set filters and listener
+                ((CustomEditText) viewHolder.component).setFilters(new InputFilter[]{new InputFilter.LengthFilter(Constants.MAX_INT_CHARS),new MinMaxInputFilter(1, null)});
+                ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(question));
+                break;
+            case Constants.INT:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.integer, parent, question, viewHolder, position, getInflater());
+                //Add main component, set filters and listener
+                ((CustomEditText) viewHolder.component).setFilters(new InputFilter[]{new InputFilter.LengthFilter(Constants.MAX_INT_CHARS)});
+                ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(question));
+                break;
+            case Constants.DATE:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.date, parent, question, viewHolder, position, getInflater());
+                //Add main component and listener
+                ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(question));
+                break;
+
+            case Constants.SHORT_TEXT:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.shorttext, parent, question, viewHolder, position, getInflater());
+                //Add main component and listener
+                ((CustomEditText) viewHolder.component).addTextChangedListener(new TextViewListener(question));
+                break;
+
+            case Constants.DROPDOWN_LIST:
+                rowView = AutoTabLayoutUtils.initialiseDropDown(position, parent, question, viewHolder, getInflater(), getContext());
+                // Initialise Listener
+                ((Spinner) viewHolder.component).setOnItemSelectedListener(new SpinnerListener(question, viewHolder));
+                break;
+            case Constants.DROPDOWN_LIST_DISABLED:
+                rowView = AutoTabLayoutUtils.initialiseDropDown(position, parent, question, viewHolder, getInflater(), getContext());
+                // Initialise value depending on match question
+                AutoTabLayoutUtils.autoFillAnswer(viewHolder, question, getContext(), inVisibilityState, this);
+                break;
+            case Constants.RADIO_GROUP_HORIZONTAL:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.radio, parent, question, viewHolder, position, getInflater());
+                AutoTabLayoutUtils.initialiseScorableComponent(rowView, viewHolder);
+                AutoTabLayoutUtils.createRadioGroupComponent(question, viewHolder, LinearLayout.HORIZONTAL, getInflater(), getContext());
+                //Add Listener
+                ((RadioGroup) viewHolder.component).setOnCheckedChangeListener(new RadioGroupListener(question, viewHolder));
+                break;
+            case Constants.RADIO_GROUP_VERTICAL:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.radio, parent, question, viewHolder, position, getInflater());
+                AutoTabLayoutUtils.initialiseScorableComponent(rowView, viewHolder);
+                AutoTabLayoutUtils.createRadioGroupComponent(question, viewHolder, LinearLayout.VERTICAL, getInflater(), getContext());
+                //Add Listener
+                ((RadioGroup) viewHolder.component).setOnCheckedChangeListener(new RadioGroupListener(question, viewHolder));
+                break;
+            case Constants.SWITCH_BUTTON:
+                rowView = AutoTabLayoutUtils.initialiseView(R.layout.switchbutton, parent, question, viewHolder, position, getInflater());
+                ((Switch)viewHolder.component).setOnCheckedChangeListener(new SwitchButtonListener(question,viewHolder));
+
+            default:
+                break;
+        }
+        return rowView;
+    }
+
+    private View getViewTableHeader(LinearLayout row, QuestionRow questionRow){
+        row.setWeightSum(1f);
+        float columnWeight=questionRow.sizeColumns()/1f;
+        for(Question question:questionRow.getQuestions()){
+            addTextViewToRow(row,question,columnWeight, R.drawable.background_header,
+                    getContext().getResources().getColor(R.color.white),
+                    getContext().getString(R.string.condensed_font_name),
+                    getContext().getString(R.string.font_size_level1));
+        }
+        return row;
+    }
+
+    private View getViewTableContent(LinearLayout row,QuestionRow questionRow, AutoTabViewHolder viewHolder){
+        row.setWeightSum(1f);
+        float columnWeight=questionRow.sizeColumns()/1f;
+        for(Question question:questionRow.getQuestions()){
+            CustomEditText customEditText;
+            Spinner spinner;
+            //Create view for columm
+            switch (question.getOutput()){
+                case Constants.NO_ANSWER:
+                    addTextViewToRow(row,question,columnWeight);
+                    viewHolder.addColumnComponent(null);
+                    break;
+                case Constants.DATE:
+                case Constants.LONG_TEXT:
+                case Constants.SHORT_TEXT:
+                    customEditText= addEditViewToRow(row,question,columnWeight);
+                    customEditText.addTextChangedListener(new TextViewListener(question));
+                    viewHolder.addColumnComponent(customEditText);
+                    break;
+                case Constants.INT:
+                    customEditText= addEditIntViewToRow(row, question, columnWeight);
+                    customEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(Constants.MAX_INT_CHARS)});
+                    customEditText.addTextChangedListener(new TextViewListener(question));
+                    viewHolder.addColumnComponent(customEditText);
+                    break;
+                case Constants.POSITIVE_INT:
+                    customEditText= addEditIntViewToRow(row, question, columnWeight);
+                    customEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(Constants.MAX_INT_CHARS), new MinMaxInputFilter(1, null)});
+                    customEditText.addTextChangedListener(new TextViewListener(question));
+                    viewHolder.addColumnComponent(customEditText);
+                    break;
+                case Constants.DROPDOWN_LIST:
+                    spinner = addSpinnerViewToRow(row,question,columnWeight);
+                    spinner.setOnItemSelectedListener(new SpinnerListener(question, new AutoTabViewHolder(spinner)));
+                    viewHolder.addColumnComponent(spinner);
+                    break;
+                case Constants.DROPDOWN_LIST_DISABLED:
+                    spinner = addSpinnerViewToRow(row,question,columnWeight);
+                    spinner.setOnItemSelectedListener(new SpinnerListener(question, new AutoTabViewHolder(spinner)));
+                    AutoTabLayoutUtils.autoFillAnswer(new AutoTabViewHolder(spinner), question, getContext(), inVisibilityState, this);
+                    viewHolder.addColumnComponent(spinner);
+                    break;
+                case Constants.RADIO_GROUP_HORIZONTAL:
+                case Constants.RADIO_GROUP_VERTICAL:
+                    RadioGroup radioGroup = addRadioGroupViewToRow(row,question,columnWeight);
+                    radioGroup.setOnCheckedChangeListener(new RadioGroupListener(question, new AutoTabViewHolder(radioGroup)));
+                    viewHolder.addColumnComponent(radioGroup);
+                    break;
+                case Constants.SWITCH_BUTTON:
+                    Switch switchButton = addSwitchViewToRow(row,question,columnWeight);
+                    switchButton.setOnCheckedChangeListener(new SwitchButtonListener(question,viewHolder));
+                    viewHolder.addColumnComponent(switchButton);
+            }
+        }
+        return row;
+    }
+
+    private void addTextViewToRow(LinearLayout rowLayout, Question question, float columnWeight, Integer background, Integer fontColor, String fontName, String fontDimension){
+        rowLayout.setWeightSum(columnWeight);
+        CustomTextView textView = new CustomTextView(getContext());
+        textView.setText(question.getForm_name());
+        textView.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.0f));
+        rowLayout.addView(textView);
+        // Style customization
+        if (background != null) rowLayout.setBackgroundResource(background);
+        if (fontColor != null) textView.setTextColor(fontColor);
+        if (fontName != null) textView.setmFontName(fontName);
+        if (fontDimension != null) textView.setmDimension(fontDimension);
+        if (PreferencesState.getInstance().getScale().equals(getContext().getString(R.string.font_size_system)))
+            textView.setTextSize(getContext().getResources().getDimension(R.dimen.small_medium_text_size));
+        else
+            textView.setTextSize(PreferencesState.getInstance().getFontSize(PreferencesState.getInstance().getScale(), textView.getmDimension()));
+    }
+
+    private void addTextViewToRow(LinearLayout rowLayout, Question question, float columnWeight){
+        addTextViewToRow(rowLayout, question, columnWeight, null, null, null, null);
+    }
+
+    private CustomEditText addEditViewToRow(LinearLayout rowLayout, Question question, float columnWeight){
+        //TODO Add the right widget, style, setvalues, readonly, ...
+        rowLayout.setWeightSum(columnWeight);
+        CustomEditText editText = new CustomEditText(getContext());
+        editText.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        rowLayout.addView(editText);
+        return editText;
+    }
+
+    private CustomEditText addEditIntViewToRow(LinearLayout rowLayout, Question question, float columnWeight){
+        CustomEditText customEditText=addEditViewToRow(rowLayout,question,columnWeight);
+        customEditText.setInputType(EditorInfo.TYPE_CLASS_NUMBER);
+        return customEditText;
+    }
+
+    private Spinner addSpinnerViewToRow (LinearLayout rowLayout, Question question, float columnWeight) {
+        rowLayout.setWeightSum(columnWeight);
+        Spinner spinner = new Spinner(getContext(), Spinner.MODE_DROPDOWN);
+        spinner.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        if(Build.VERSION.SDK_INT >=Build.VERSION_CODES.LOLLIPOP){
+            spinner.setBackgroundTintMode(PorterDuff.Mode.ADD);
+            spinner.setBackgroundTintList(ColorStateList.valueOf(getContext().getResources().getColor(R.color.headerColor)));
+        }
+        //this colors de arrow
+//        spinner.getBackground().setColorFilter(getContext().getResources().getColor(R.color.headerColor), PorterDuff.Mode.SRC_ATOP);
+
+        rowLayout.addView(spinner);
+        List<Option> optionList = new ArrayList<>(question.getAnswer().getOptions());
+        optionList.add(0, new Option(Constants.DEFAULT_SELECT_OPTION));
+        spinner.setAdapter(new OptionArrayAdapter(getContext(), optionList));
+        return spinner;
+    }
+
+    private RadioGroup addRadioGroupViewToRow (LinearLayout rowLayout, Question question, float columnWeight) {
+        rowLayout.setWeightSum(columnWeight);
+        RadioGroup radioGroup = new RadioGroup(getContext());
+        radioGroup.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        rowLayout.addView(radioGroup);
+
+        int radioGroupOrientation=question.getOutput()==Constants.RADIO_GROUP_VERTICAL?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL;
+        AutoTabLayoutUtils.createRadioGroupComponent(question, new AutoTabViewHolder(radioGroup), radioGroupOrientation, getInflater(), getContext());
+
+        return radioGroup;
+    }
+
+    private Switch addSwitchViewToRow(LinearLayout rowLayout, Question question, float columnWeight){
+        rowLayout.setWeightSum(columnWeight);
+        Switch switchButton = new Switch(getContext());
+        rowLayout.addView(switchButton);
+        return switchButton;
+    }
+
+    public void setValues(AutoTabViewHolder viewHolder, QuestionRow questionRow) {
+        for(int i=0;i<questionRow.sizeColumns();i++){
+            View component = viewHolder.getColumnComponent(i);
+            Question question = questionRow.getQuestions().get(i);
+            setValues(component,question);
+        }
+    }
+
+    public void setValues(View component, Question question){
+        if(component==null || question==null){
+            return;
+        }
+        setValues(new AutoTabViewHolder(component),question);
+    }
+
+    public void setValues(AutoTabViewHolder viewHolder, Question question) {
+        if(viewHolder==null || question==null){
+            return;
+        }
 
         switch (question.getOutput()) {
             case Constants.DATE:
@@ -273,21 +482,19 @@ public class AutoTabAdapter extends ATabAdapter {
             case Constants.INT:
             case Constants.LONG_TEXT:
             case Constants.POSITIVE_INT:
-                ((CustomEditText) viewHolder.component).setText(ReadWriteDB.readValueQuestion(question));
+                viewHolder.setText(ReadWriteDB.readValueQuestion(question));
                 break;
             case Constants.DROPDOWN_LIST:
             case Constants.DROPDOWN_LIST_DISABLED:
-
-                ((Spinner) viewHolder.component).setSelection(ReadWriteDB.readPositionOption(question));
-
+                viewHolder.setSpinnerSelection(ReadWriteDB.readPositionOption(question));
                 List<Float> numdenum = ScoreRegister.getNumDenum(question);
                 if (numdenum != null) {
-                    viewHolder.num.setText(Float.toString(numdenum.get(0)));
-                    viewHolder.denum.setText(Float.toString(numdenum.get(1)));
+                    viewHolder.setNumText(Float.toString(numdenum.get(0)));
+                    viewHolder.setDenumText(Float.toString(numdenum.get(1)));
                 } else {
-                    viewHolder.num.setText(getContext().getString(R.string.number_zero));
-                    viewHolder.denum.setText(Float.toString(ScoreRegister.calcDenum(question)));
-                    ((Spinner) viewHolder.component).setSelection(0);
+                    viewHolder.setNumText(getContext().getString(R.string.number_zero));
+                    viewHolder.setDenumText(Float.toString(ScoreRegister.calcDenum(question)));
+                    viewHolder.setSpinnerSelection(0);
                 }
 
                 break;
@@ -300,18 +507,54 @@ public class AutoTabAdapter extends ATabAdapter {
                     break;
                 }
                 if (value != null) {
-                    ((CustomRadioButton) viewHolder.component.findViewWithTag(value.getOption())).setChecked(true);
-
-                    viewHolder.num.setText(Float.toString(numdenumradiobutton.get(0)));
-                    viewHolder.denum.setText(Float.toString(numdenumradiobutton.get(1)));
+                    viewHolder.setRadioChecked(value.getOption());
+                    viewHolder.setNumText(Float.toString(numdenumradiobutton.get(0)));
+                    viewHolder.setDenumText(Float.toString(numdenumradiobutton.get(1)));
                 } else {
-                    viewHolder.num.setText(getContext().getString(R.string.number_zero));
-                    viewHolder.denum.setText(Float.toString(ScoreRegister.calcDenum(question)));
+                    viewHolder.setNumText(getContext().getString(R.string.number_zero));
+                    viewHolder.setDenumText(Float.toString(ScoreRegister.calcDenum(question)));
                 }
+                break;
+            case Constants.SWITCH_BUTTON:
+                Option option = findOptionBySession(question);
+                viewHolder.setSwitchOption(option);
                 break;
             default:
                 break;
         }
+    }
+
+    /**
+     * Returns the option selected for the given question and boolean value
+     * @param question
+     * @param isChecked
+     * @return
+     */
+    public static Option findSwitchOption(Question question,boolean isChecked){
+        String expectedCode=String.valueOf(isChecked);
+        for(Option option:question.getAnswer().getOptions()){
+            if(expectedCode.equals(option.getCode())){
+                return option;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the selected option of the given question (for the survey in session)
+     * @param question
+     * @return
+     */
+    private Option findOptionBySession(Question question){
+        Value value = question.getValueBySession();
+
+        //real value -> real option
+        if(value!=null){
+            return value.getOption();
+        }
+
+        //Default 'falsy' option
+        return findSwitchOption(question,false);
     }
 
     //////////////////////////////////////
@@ -321,8 +564,8 @@ public class AutoTabAdapter extends ATabAdapter {
         private boolean viewCreated;
         private Question question;
 
-        public TextViewListener(boolean viewCreated, Question question) {
-            this.viewCreated = viewCreated;
+        public TextViewListener(Question question) {
+            this.viewCreated = false;
             this.question = question;
         }
 
@@ -338,34 +581,36 @@ public class AutoTabAdapter extends ATabAdapter {
 
         @Override
         public void afterTextChanged(Editable s) {
-            if (viewCreated) {
-                ReadWriteDB.saveValuesText(question, s.toString());
-            } else {
-                viewCreated = true;
+            if(!viewCreated){
+                viewCreated=true;
+                return;
             }
+            ReadWriteDB.saveValuesText(question, s.toString());
         }
     }
 
     private class SpinnerListener implements AdapterView.OnItemSelectedListener {
 
         private boolean viewCreated;
-        private AutoTabLayoutUtils.ViewHolder viewHolder;
+        private AutoTabViewHolder viewHolder;
         private Question question;
 
-        public SpinnerListener(boolean viewCreated, Question question, AutoTabLayoutUtils.ViewHolder viewHolder) {
-            this.viewCreated = viewCreated;
+        public SpinnerListener(Question question, AutoTabViewHolder viewHolder) {
+            this.viewCreated = false;
             this.question = question;
             this.viewHolder = viewHolder;
         }
 
         @Override
         public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
-            if (viewCreated) {
-                if (AutoTabLayoutUtils.itemSelected(viewHolder, scoreHolder, question, (Option) ((Spinner) viewHolder.component).getItemAtPosition(pos), totalNum, totalDenum, getContext(), elementInvisibility))
-                    notifyDataSetChanged();
-            } else {
+            if(!viewCreated){
                 viewCreated = true;
+                return;
             }
+
+            Option selectedOption=(Option) ((Spinner) viewHolder.component).getItemAtPosition(pos);
+            AutoTabSelectedItem autoTabSelectedItem = autoTabSelectedItemFactory.buildSelectedItem(question,selectedOption,viewHolder);
+            AutoTabLayoutUtils.itemSelected(autoTabSelectedItem);
         }
 
         @Override
@@ -375,14 +620,13 @@ public class AutoTabAdapter extends ATabAdapter {
     }
 
     public class RadioGroupListener implements RadioGroup.OnCheckedChangeListener {
-        private AutoTabLayoutUtils.ViewHolder viewHolder;
+        private AutoTabViewHolder viewHolder;
         private Question question;
 
-        public RadioGroupListener(Question question, AutoTabLayoutUtils.ViewHolder viewHolder) {
+        public RadioGroupListener(Question question, AutoTabViewHolder viewHolder) {
             this.question = question;
             this.viewHolder = viewHolder;
         }
-
 
         @Override
         public void onCheckedChanged(RadioGroup group, int checkedId) {
@@ -390,13 +634,40 @@ public class AutoTabAdapter extends ATabAdapter {
                 return;
             }
 
-            Option option = new Option(Constants.DEFAULT_SELECT_OPTION);
+            Option selectedOption = new Option(Constants.DEFAULT_SELECT_OPTION);
             if (checkedId != -1) {
                 CustomRadioButton customRadioButton = this.viewHolder.findRadioButtonById(checkedId);
-                option = (Option) customRadioButton.getTag();
+                selectedOption = (Option) customRadioButton.getTag();
             }
-            if (AutoTabLayoutUtils.itemSelected(viewHolder, scoreHolder, question, option, totalNum, totalDenum, getContext(), elementInvisibility))
-                notifyDataSetChanged();
+            AutoTabSelectedItem autoTabSelectedItem = autoTabSelectedItemFactory.buildSelectedItem(question,selectedOption,viewHolder);
+            AutoTabLayoutUtils.itemSelected(autoTabSelectedItem);
+        }
+    }
+
+    public class SwitchButtonListener implements CompoundButton.OnCheckedChangeListener{
+
+        private AutoTabViewHolder viewHolder;
+        private Question question;
+
+        public SwitchButtonListener(Question question, AutoTabViewHolder viewHolder) {
+            this.question = question;
+            this.viewHolder = viewHolder;
+        }
+
+        @Override
+        public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+            if(!buttonView.isShown()){
+                return;
+            }
+
+            //Take option
+            Option selectedOption=findSwitchOption(question, isChecked);
+            if(selectedOption==null){
+                return;
+            }
+            ((Switch)viewHolder.component).setText(selectedOption.getName());
+            AutoTabSelectedItem autoTabSelectedItem = autoTabSelectedItemFactory.buildSelectedItem(question,selectedOption,viewHolder);
+            AutoTabLayoutUtils.itemSelected(autoTabSelectedItem);
         }
     }
 

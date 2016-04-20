@@ -27,6 +27,9 @@ import android.util.Log;
 import org.eyeseetea.malariacare.DashboardActivity;
 import org.eyeseetea.malariacare.ProgressActivity;
 import org.eyeseetea.malariacare.R;
+import org.eyeseetea.malariacare.layout.dashboard.builder.AppSettingsBuilder;
+import org.eyeseetea.malariacare.layout.dashboard.config.AppSettings;
+import org.eyeseetea.malariacare.layout.dashboard.config.DashboardOrientation;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -54,7 +57,15 @@ public class PreferencesState {
      */
     private boolean showNumDen;
 
+    /**
+     * Flag that determines if data must be pulled from server
+     */
     private Boolean pullFromServer;
+
+    /**
+     * Flag that determines if the planning tab must be hide or not
+     */
+    private Boolean hidePlanningTab;
 
     /**
      * Map that holds the relationship between a scale and a set of dimensions
@@ -65,6 +76,11 @@ public class PreferencesState {
      * Flag that determines if the location is required for push
      */
     private boolean locationRequired;
+
+    /**
+     * Sets the max number of events to download from dhis server
+     */
+    private int maxEvents;
 
     static Context context;
 
@@ -84,7 +100,9 @@ public class PreferencesState {
         scale= initScale();
         showNumDen=initShowNumDen();
         locationRequired=initLocationRequired();
-        Log.d(TAG,"reloadPreferences: scale:"+scale+" | showNumDen:"+showNumDen+" | locationRequired:"+locationRequired);
+        hidePlanningTab = initHidePlanningTab();
+        maxEvents=initMaxEvents();
+        Log.d(TAG,String.format("reloadPreferences: scale: %s | showNumDen: %b | locationRequired: %b | maxEvents: %d",scale,showNumDen,locationRequired,maxEvents));
     }
 
     /**
@@ -116,6 +134,25 @@ public class PreferencesState {
     private boolean initLocationRequired(){
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(instance.getContext());
         return sharedPreferences.getBoolean(instance.getContext().getString(R.string.location_required), false);
+    }
+
+    /**
+     * Inits hidePlanningTab flag according to preferences
+     * @return
+     */
+    private boolean initHidePlanningTab(){
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(instance.getContext());
+        return sharedPreferences.getBoolean(instance.getContext().getString(R.string.hide_planning_tab_key), false);
+    }
+
+    /**
+     * Inits maxEvents settings
+     * @return
+     */
+    private int initMaxEvents(){
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(instance.getContext());
+        String maxValue=sharedPreferences.getString(instance.getContext().getString(R.string.dhis_max_items), instance.getContext().getString(R.string.dhis_default_max_items));
+        return Integer.valueOf(maxValue);
     }
 
     /**
@@ -188,14 +225,14 @@ public class PreferencesState {
         return showNumDen;
     }
 
-    public void setShowNumDen(boolean value){
-        this.showNumDen=value;
-    }
-
     public boolean isLocationRequired(){return locationRequired;}
 
-    public void setLocationRequired(boolean value){
-        this.locationRequired=value;
+    public boolean isHidePlanningTab(){
+        return this.hidePlanningTab;
+    }
+
+    public int getMaxEvents(){
+        return this.maxEvents;
     }
 
     public Float getFontSize(String scale,String dimension){
@@ -214,11 +251,28 @@ public class PreferencesState {
         return pullFromServer;
     }
 
+    /**
+     * Tells if the application is Vertical or horizontall
+     * @return
+     */
+    public Boolean isVerticalDashboard() {
+        return DashboardOrientation.VERTICAL.equals(AppSettingsBuilder.getDashboardOrientation());
+    }
+
     public Class getMainActivity(){
         if(getPullFromServer()){
             return ProgressActivity.class;
         }
 
         return DashboardActivity.class;
+    }
+
+
+    public void clearOrgUnitPreference() {
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
+        SharedPreferences.Editor editor =sharedPreferences.edit();
+        editor.putString(context.getResources().getString(R.string.default_orgUnits), "");
+        editor.putString(context.getResources().getString(R.string.default_orgUnit), "");
+        editor.commit();
     }
 }

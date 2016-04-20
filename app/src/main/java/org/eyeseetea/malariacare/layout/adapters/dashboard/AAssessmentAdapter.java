@@ -20,30 +20,24 @@
 package org.eyeseetea.malariacare.layout.adapters.dashboard;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
-
-import com.raizlabs.android.dbflow.sql.language.Select;
 
 import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.database.model.Survey;
-import org.eyeseetea.malariacare.database.model.TabGroup;
+import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.SurveyAnsweredRatio;
 import org.eyeseetea.malariacare.layout.utils.LayoutUtils;
+import org.eyeseetea.malariacare.utils.Utils;
 import org.eyeseetea.malariacare.views.CustomTextView;
 
-import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 
 public abstract class AAssessmentAdapter extends ADashboardAdapter implements IDashboardAdapter {
 
     protected int backIndex = 0;
-    protected boolean showNextFacilityName = true;
-    protected boolean multipleTabGroups = new Select().count().from(TabGroup.class).count() != 1;
 
     public AAssessmentAdapter() { }
 
@@ -54,7 +48,8 @@ public abstract class AAssessmentAdapter extends ADashboardAdapter implements ID
         this.headerLayout = R.layout.assessment_header;
         this.recordLayout = R.layout.assessment_record;
         this.footerLayout = R.layout.assessment_footer;
-        //this.title = context.getString(R.string.assessment_title_header);
+        if(PreferencesState.getInstance().isVerticalDashboard())
+            this.title = context.getString(R.string.assessment_title_header);
     }
 
     @Override
@@ -75,29 +70,35 @@ public abstract class AAssessmentAdapter extends ADashboardAdapter implements ID
 
 
         if (sentDate != null){
-            Date completionDate = survey.getCompletionDate();
-            SimpleDateFormat format = new SimpleDateFormat("MM/dd/yyyy");
-            sentDate.setText(format.format(completionDate));
-            sentScore.setText(String.format("%.1f %%", survey.getMainScore()));
-            int colorId=LayoutUtils.trafficColor(survey.getMainScore());
-            sentScore.setTextColor(getContext().getResources().getColor(colorId));
+            Date eventDate = survey.getCompletionDate();
+            sentDate.setText(Utils.formatDate(eventDate));
+            if(survey.hasConflict() && sentScore!=null){
+                sentScore.setText((getContext().getResources().getString(R.string.feedback_info_conflict)).toUpperCase());
+                sentScore.setTextColor(getContext().getResources().getColor(R.color.darkRed));
+            }
+            else if(sentScore!=null){
+                // if(!PreferencesState.getInstance().isVerticalDashboard()){
+                sentScore.setText(String.format("%.1f %%",survey.getMainScore()));
+                int colorId=LayoutUtils.trafficColor(survey.getMainScore());
+                sentScore.setTextColor(getContext().getResources().getColor(colorId));
+            }
         } else {
             //Status Cell
             ((CustomTextView) rowView.findViewById(R.id.score)).setText(getStatus(survey));
         }
 
         // show facility name (or not) and write survey type name
-        if (!showNextFacilityName) {
-            facilityName.setVisibility(View.GONE);
-            facilityName.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 0f));
-            surveyType.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 1f));
-        } else {
+        if (hasToShowFacility(position,survey)) {
             facilityName.setText(survey.getOrgUnit().getName());
-            facilityName.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 0.5f));
-            surveyType.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 0.5f));
+        } else {
+            facilityName.setVisibility(View.GONE);
         }
 
-        String surveyDescription = "- " + survey.getTabGroup().getProgram().getName();
+        String surveyDescription;
+        if(survey.isCompleted())
+            surveyDescription = "* " + survey.getTabGroup().getProgram().getName()+":"+survey.getTabGroup().getName();
+        else
+            surveyDescription = "- " + survey.getTabGroup().getProgram().getName()+":"+survey.getTabGroup().getName();
         surveyType.setText(surveyDescription);
 
         // check whether the following item belongs to the same org unit (to group the data related
@@ -106,15 +107,12 @@ public abstract class AAssessmentAdapter extends ADashboardAdapter implements ID
             if (this.items.get(position+1).getOrgUnit().equals((this.items.get(position)).getOrgUnit())){
                 // show background without border and tell the system that next survey belongs to the same org unit, so its name doesn't need to be shown
                 rowView=setBackground(position+1,rowView);
-                this.showNextFacilityName = false;
             } else {
                 // show background with border and switch background for the next row
                 rowView=setBackgroundWithBorder(position + 1, rowView);
                 this.backIndex++;
-                this.showNextFacilityName = true;
             }
         }  else {
-            this.showNextFacilityName = true;
             //show background with border
             rowView=setBackgroundWithBorder(position, rowView);
         }
@@ -122,8 +120,24 @@ public abstract class AAssessmentAdapter extends ADashboardAdapter implements ID
         return rowView;
     }
 
+    /**
+     * Determines whether to show facility or not according to:
+     *  - The previous survey belongs to the same one.
+     * @param position
+     * @param survey
+     * @return
+     */
+    private boolean hasToShowFacility(int position, Survey survey){
+        if(position==0){
+            return true;
+        }
+
+        Survey previousSurvey = this.items.get(position-1);
+        return !survey.getOrgUnit().getId_org_unit().equals(previousSurvey.getOrgUnit().getId_org_unit());
+    }
+
     private View setBackgroundWithBorder(int position, View rowView) {
-        if(items.get(position).isCompleted() || items.get(position).isSent()) {
+        if(!PreferencesState.getInstance().isVerticalDashboard() && (items.get(position).isCompleted() || items.get(position).isSent())) {
             rowView.setBackgroundResource(LayoutUtils.calculateBackgroundsImprove(this.backIndex));
         }
         else {
@@ -133,7 +147,7 @@ public abstract class AAssessmentAdapter extends ADashboardAdapter implements ID
     }
 
     private View setBackground(int position, View rowView) {
-        if(items.get(position).isCompleted() || items.get(position).isSent()) {
+        if(!PreferencesState.getInstance().isVerticalDashboard() && (items.get(position).isCompleted() || items.get(position).isSent())) {
             rowView.setBackgroundResource(LayoutUtils.calculateBackgroundsImprove(this.backIndex));
         }
         else {
@@ -157,13 +171,14 @@ public abstract class AAssessmentAdapter extends ADashboardAdapter implements ID
         if (surveyAnsweredRatio.isCompleted()) {
             return getContext().getString(R.string.dashboard_info_ready_to_upload);
         } else {
-            if(surveyAnsweredRatio.getTotalCompulsory()>0) {
-                int value=Float.valueOf(100 * surveyAnsweredRatio.getCompulsoryRatio()).intValue();
-                if(value>=100){
-                    return getContext().getString(R.string.dashboard_info_ready_to_upload);
+            if (!PreferencesState.getInstance().isVerticalDashboard()){
+                if (surveyAnsweredRatio.getTotalCompulsory() > 0) {
+                    int value = Float.valueOf(100 * surveyAnsweredRatio.getCompulsoryRatio()).intValue();
+                    if (value >= 100) {
+                        return getContext().getString(R.string.dashboard_info_ready_to_upload);
+                    } else
+                        return String.format("%d", value);
                 }
-                else
-                return String.format("%d", value);
             }
             return String.format("%d", Float.valueOf(100*surveyAnsweredRatio.getRatio()).intValue());
         }
@@ -171,13 +186,7 @@ public abstract class AAssessmentAdapter extends ADashboardAdapter implements ID
 
     @Override
     public void notifyDataSetChanged(){
-        this.showNextFacilityName = true;
         super.notifyDataSetChanged();
     }
-
-    public void clearShowNextFacility(){
-        this.showNextFacilityName = true;
-    }
-
 
 }

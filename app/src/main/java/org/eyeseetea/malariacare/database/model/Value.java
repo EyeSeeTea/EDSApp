@@ -20,8 +20,6 @@
 package org.eyeseetea.malariacare.database.model;
 
 import com.raizlabs.android.dbflow.annotation.Column;
-import com.raizlabs.android.dbflow.annotation.ForeignKey;
-import com.raizlabs.android.dbflow.annotation.ForeignKeyReference;
 import com.raizlabs.android.dbflow.annotation.PrimaryKey;
 import com.raizlabs.android.dbflow.annotation.Table;
 import com.raizlabs.android.dbflow.sql.builder.Condition;
@@ -33,6 +31,8 @@ import com.raizlabs.android.dbflow.structure.BaseModel;
 import org.eyeseetea.malariacare.database.AppDatabase;
 import org.eyeseetea.malariacare.database.iomodules.dhis.exporter.IConvertToSDKVisitor;
 import org.eyeseetea.malariacare.database.iomodules.dhis.exporter.VisitableToSDK;
+
+import java.util.Date;
 
 @Table(databaseName = AppDatabase.NAME)
 public class Value extends BaseModel implements VisitableToSDK {
@@ -48,6 +48,7 @@ public class Value extends BaseModel implements VisitableToSDK {
     /**
      * Reference to the question for this value (loaded lazily)
      */
+
     Question question;
 
     @Column
@@ -63,8 +64,17 @@ public class Value extends BaseModel implements VisitableToSDK {
      * Reference to the option of this value (loaded lazily)
      */
     Option option;
+    /**
+     * is conflict
+     */
+    @Column
+    Boolean conflict;
+
+    @Column
+    Date upload_date;
 
     public Value() {
+        upload_date =new Date();
     }
 
     public Value(String value, Question question, Survey survey) {
@@ -72,6 +82,7 @@ public class Value extends BaseModel implements VisitableToSDK {
         this.value = value;
         this.setQuestion(question);
         this.setSurvey(survey);
+        upload_date =new Date();
     }
 
     public Value(Option option, Question question, Survey survey) {
@@ -79,6 +90,7 @@ public class Value extends BaseModel implements VisitableToSDK {
         this.setOption(option);
         this.setQuestion(question);
         this.setSurvey(survey);
+        upload_date =new Date();
     }
 
     public Long getId_value() {
@@ -161,6 +173,24 @@ public class Value extends BaseModel implements VisitableToSDK {
         this.survey = null;
     }
 
+    public Boolean getConflict() {
+        if(conflict==null)
+            return false;
+        return conflict;
+    }
+
+    public void setConflict(Boolean conflict) {
+        this.conflict = conflict;
+    }
+
+    public Date getUploadDate() {
+        return upload_date;
+    }
+
+    public void setUploadDate(Date upload_date) {
+        this.upload_date = upload_date;
+    }
+
     /**
      * Checks if the current value contains an answer
      * @return true|false
@@ -205,6 +235,13 @@ public class Value extends BaseModel implements VisitableToSDK {
                 .where(Condition.column(Question$Table.COMPULSORY).eq(true))
                 .and((Condition.column(Value$Table.ID_SURVEY).eq(survey.getId_survey()))).count();
     }
+
+    public static long count(){
+        return new Select().count()
+                .from(Value.class)
+                .count();
+    }
+
     @Override
     public void accept(IConvertToSDKVisitor IConvertToSDKVisitor) {
         IConvertToSDKVisitor.visit(this);
@@ -223,6 +260,10 @@ public class Value extends BaseModel implements VisitableToSDK {
             return false;
         if (id_survey != null ? !id_survey.equals(value1.id_survey) : value1.id_survey != null)
             return false;
+        if (conflict != null ? !conflict.equals(value1.conflict) : value1.conflict != null)
+            return false;
+        if (upload_date != null ? !upload_date.equals(value1.upload_date) : value1.upload_date != null)
+            return false;
         return !(id_option != null ? !id_option.equals(value1.id_option) : value1.id_option != null);
 
     }
@@ -234,6 +275,8 @@ public class Value extends BaseModel implements VisitableToSDK {
         result = 31 * result + (id_question != null ? id_question.hashCode() : 0);
         result = 31 * result + (id_survey != null ? id_survey.hashCode() : 0);
         result = 31 * result + (id_option != null ? id_option.hashCode() : 0);
+        result = 31 * result + (upload_date != null ? upload_date.hashCode() : 0);
+        result = 31 * result + (conflict != null ? conflict.hashCode() : 0);
         return result;
     }
 
@@ -245,6 +288,8 @@ public class Value extends BaseModel implements VisitableToSDK {
                 ", id_question=" + id_question +
                 ", id_survey=" + id_survey +
                 ", id_option=" + id_option +
+                ", upload_date=" + upload_date.toString() +
+                ", conflict=" + conflict +
                 '}';
     }
 }

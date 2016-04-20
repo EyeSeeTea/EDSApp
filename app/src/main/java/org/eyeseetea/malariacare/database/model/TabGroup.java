@@ -19,6 +19,8 @@
 
 package org.eyeseetea.malariacare.database.model;
 
+import android.util.Log;
+
 import com.raizlabs.android.dbflow.annotation.Column;
 import com.raizlabs.android.dbflow.annotation.ForeignKey;
 import com.raizlabs.android.dbflow.annotation.ForeignKeyReference;
@@ -105,7 +107,9 @@ public class TabGroup extends BaseModel {
 
     public Program getProgram() {
         if(program==null){
-            if (id_program == null) return null;
+            if (id_program == null){
+                return null;
+            }
             program= new Select()
                     .from(Program.class)
                     .where(Condition.column(Program$Table.ID_PROGRAM)
@@ -183,4 +187,7 @@ public class TabGroup extends BaseModel {
                 '}';
     }
 
+    public static List<TabGroup> getAllTabgroup() {
+        return new Select().all().from(TabGroup.class).queryList();
+    }
 }

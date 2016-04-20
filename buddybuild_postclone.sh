@@ -1,7 +1,15 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
-rm -rf DBFlowORM
-git clone git@github.com:EyeSeeTea/DBFlow.git DBFlowORM
-rm -rf sdk
-git clone -b 2.22_EyeSeeTea git@github.com:EyeSeeTea/dhis2-android-sdk.git sdk
+# Definitions
+gitPath=$(git rev-parse --show-toplevel)
+postCheckoutFile=${gitPath}/.git/hooks/post-checkout
+
+# Generate last commit
+sh ${gitPath}/generate_last_commit.sh
+
+# Use the EST SDK branch
+cd sdk
+git checkout 2.22_EyeSeeTea
+cd -
 cp -a DBFlowORM sdk
+

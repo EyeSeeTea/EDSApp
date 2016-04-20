@@ -20,8 +20,10 @@
 package org.eyeseetea.malariacare.layout.adapters.survey;
 
 import android.content.Context;
+import android.graphics.Typeface;
 import android.text.Html;
 import android.text.method.LinkMovementMethod;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -118,18 +120,28 @@ public class FeedbackAdapter extends BaseAdapter {
 
         //CompositeScore title
         TextView textView=(TextView)rowLayout.findViewById(R.id.feedback_label);
-        if(feedback.getLabel().matches("^[0-9].*"))
-            textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.white));
+        String pattern="^[0-9]+[.][0-9]+.*"; // the format "1.1" for the second level header
+        if(!PreferencesState.getInstance().isVerticalDashboard())
+        if(feedback.getLabel().matches(pattern)) {
+            textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.darkGrey));
+            //Calculate the size of the second header, with the pixels size between question label and header label.
+            LinearLayout questionLayout = (LinearLayout)inflater.inflate(R.layout.feedback_question_row, parent, false);
+            TextView questionTextView=(TextView)questionLayout.findViewById(R.id.feedback_question_label);
+            float size=(textView.getTextSize()+questionTextView.getTextSize())/2;
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_PX,size);
+        }
         textView.setText(feedback.getLabel());
 
         //CompositeScore title
         textView=(TextView)rowLayout.findViewById(R.id.feedback_score_label);
-        if(feedback.getScore()< Constants.MAX_AMBER)
-            textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.amber));
-        else if(feedback.getScore()< Constants.MAX_RED)
-            textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.darkRed));
-        else
-            textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.lightGreen));
+        if(!PreferencesState.getInstance().isVerticalDashboard()) {
+            if (feedback.getScore() < Constants.MAX_AMBER)
+                textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.amber));
+            else if (feedback.getScore() < Constants.MAX_RED)
+                textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.darkRed));
+            else
+                textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.lightGreen));
+        }
         textView.setText(feedback.getPercentageAsString());
 
         return rowLayout;
@@ -146,12 +158,18 @@ public class FeedbackAdapter extends BaseAdapter {
 
         //Question label
         TextView textView=(TextView)rowLayout.findViewById(R.id.feedback_question_label);
-        textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.darkGrey));
+        if(!PreferencesState.getInstance().isVerticalDashboard()){
+            textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.darkGrey));
+        }
+        if(feedback.isLabel()){
+            textView.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+        }
         textView.setText(feedback.getLabel());
 
         //Option label
         textView=(TextView)rowLayout.findViewById(R.id.feedback_option_label);
-        textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.darkGrey));
+        if(!PreferencesState.getInstance().isVerticalDashboard())
+            textView.setTextColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.darkGrey));
         textView.setText(feedback.getOption());
 
         //Score label
@@ -178,7 +196,7 @@ public class FeedbackAdapter extends BaseAdapter {
             @Override
             public void onClick(View v) {
                 QuestionFeedback questionFeedback=(QuestionFeedback)v.getTag();
-                if(questionFeedback==null){
+                if(questionFeedback==null || questionFeedback.isLabel() || questionFeedback.getFeedback()==null){
                     return;
                 }
                 toggleFeedback((LinearLayout)v, questionFeedback.toggleFeedbackShown());

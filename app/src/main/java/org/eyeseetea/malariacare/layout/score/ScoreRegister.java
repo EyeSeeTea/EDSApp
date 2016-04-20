@@ -27,6 +27,7 @@ import org.eyeseetea.malariacare.database.model.Question;
 import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.model.Tab;
 import org.eyeseetea.malariacare.database.utils.Session;
+import org.eyeseetea.malariacare.layout.utils.QuestionRow;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,6 +71,13 @@ public class ScoreRegister {
         tabScoreMap.get(question.getHeader().getTab()).addRecord(question, num, den);
     }
 
+    public static void addQuestionRowRecords(QuestionRow questionRow){
+        for(Question question:questionRow.getQuestions()){
+            ScoreRegister.addRecord(question, 0F, ScoreRegister.calcDenum(question));
+        }
+
+    }
+
     public static void deleteRecord(Question question){
         if (question.getCompositeScore() != null)
             compositeScoreMap.get(question.getCompositeScore()).deleteRecord(question);
@@ -77,6 +85,11 @@ public class ScoreRegister {
     }
 
     private static List<Float> getRecursiveScore(CompositeScore cScore, List<Float> result) {
+
+        //Protect from wrong server data
+        if (compositeScoreMap.get(cScore)==null) {
+            return Arrays.asList(0f,0f);
+        }
 
         //Sum its own records
         result=compositeScoreMap.get(cScore).calculateNumDenTotal(result);

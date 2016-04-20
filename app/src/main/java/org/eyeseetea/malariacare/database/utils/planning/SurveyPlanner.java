@@ -21,14 +21,9 @@ package org.eyeseetea.malariacare.database.utils.planning;
 
 import android.util.Log;
 
-import com.raizlabs.android.dbflow.sql.QueryBuilder;
-import com.raizlabs.android.dbflow.sql.builder.Condition;
-import com.raizlabs.android.dbflow.sql.language.Select;
-
 import org.eyeseetea.malariacare.database.model.OrgUnit;
 import org.eyeseetea.malariacare.database.model.Program;
 import org.eyeseetea.malariacare.database.model.Survey;
-import org.eyeseetea.malariacare.database.model.Survey$Table;
 import org.eyeseetea.malariacare.database.model.TabGroup;
 import org.eyeseetea.malariacare.database.utils.Session;
 import org.eyeseetea.malariacare.utils.Constants;
@@ -89,7 +84,7 @@ public class SurveyPlanner {
         newSurvey.setUser(oldSurvey.getUser());
 
         newSurvey.setTabGroup(oldSurvey.getTabGroup());
-        newSurvey.setScheduledDate(oldSurvey.getScheduledDate());
+        newSurvey.setScheduleDate(oldSurvey.getScheduleDate());
         newSurvey.setMainScore(oldSurvey.getMainScore());
         oldSurvey.setSurveyScheduleToSurvey(newSurvey);
         newSurvey.save();
@@ -113,7 +108,7 @@ public class SurveyPlanner {
         plannedSurvey.setUser(Session.getUser());
         plannedSurvey.setTabGroup(survey.getTabGroup());
         plannedSurvey.setMainScore(survey.getMainScore());
-        plannedSurvey.setScheduledDate(findScheduledDateBySurvey(survey));
+        plannedSurvey.setScheduleDate(findScheduledDateBySurvey(survey));
         plannedSurvey.save();
 
         //Save last main score
@@ -131,6 +126,11 @@ public class SurveyPlanner {
     public Survey startSurvey(OrgUnit orgUnit,TabGroup tabGroup){
         //Find planned survey
         Survey survey = Survey.findByOrgUnitAndTabGroup(orgUnit,tabGroup);
+        if(survey==null){
+            survey = new Survey();
+            survey.setTabGroup(tabGroup);
+            survey.setOrgUnit(orgUnit.getId_org_unit());
+        }
         return startSurvey(survey);
     }
 
@@ -167,13 +167,13 @@ public class SurveyPlanner {
             return null;
         }
 
-        Date eventDate=survey.getEventDate();
+        Date eventDate=survey.getCompletionDate();
         if(eventDate==null){
             return null;
         }
 
         //Load main score
-        Log.d(TAG, String.format("finding scheduledDate for a survey with: eventDate: %s, score: %f , lowProductivity: %b", eventDate.toString(), survey.getMainScore(), survey.getOrgUnit().isLowProductivity()));
+        Log.d(TAG, String.format("finding scheduledDate for a survey with: eventDate: %s, score: %f , lowProductivity: %b", eventDate.toString(), survey.getMainScore(), survey.isLowProductivity()));
 
         //A -> 6 months
         if(survey.isTypeA()){
@@ -181,7 +181,7 @@ public class SurveyPlanner {
         }
 
         //BC + Low OrgUnit -> 4
-        if(survey.getOrgUnit().isLowProductivity()){
+        if(survey.isLowProductivity()){
             return getInXMonths(eventDate,TYPE_BC_LOW_NEXT_DATE);
         }
 

@@ -15,7 +15,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var allAssessment="AllAssessment";
     var selectedProgram=allAssessment;
 	var chart=null;
-	
+
 function updateChartTitle(id,text){
     document.getElementById(id).innerHTML=text;
 }
@@ -29,7 +29,7 @@ function setData(data){
 //Save and merge a All assassement object with the stats of all the programs merged
 function setAllAssassement(data){
 	var exist=false;
-	for(i=0;i<Object.keys(inputall).length;i++){
+	for(var i=0;i<Object.keys(inputall).length;i++){
 		if(inputall[i][4]==data[4]){
 			exist=true;
 			inputall[i][0]+=data[0]; 
@@ -42,7 +42,7 @@ function setAllAssassement(data){
 }
 //show the data in the table.
 function showData(){
-	for(i=0;i<inputall.length;i++){
+	for(var i=0;i<inputall.length;i++){
         if(inputall[i].indexOf(selectedProgram) > -1){
 			surveyXMonthChart.addData([inputall[i][0], inputall[i][1]], inputall[i][4]);
 		}
@@ -50,20 +50,20 @@ function showData(){
 }
 //Create the select options for select the program
 function createSelectProgram(){
-	var selectHtml='<select onchange="changeProgram()" id="changeProgram">';
+	var selectHtml='<select onchange="changeProgram()" id="changeProgram" ">';
 	var selected="";
 	if(selectedProgram==="AllAssessment")
 		selected="selected";
-	selectHtml+="<option "+selected+" value="+allAssessment+">"+"All Assessment"+"</option>";
+	selectHtml+="<option "+selected+" value="+allAssessment+">"+"ALL ASSESSMENTS"+"</option>";
 	selected="selected";
-	for(i=0;i<input.length;i++){
+	for(var i=0;i<input.length;i++){
 		if(!(selectHtml.indexOf(input[i][3]) > -1) && !(input[i][3]=== undefined)){
 		if(input[i][3]==selectedProgram){
 			selected="selected";
 		}
 		else
 			selected="";
-		selectHtml+="<option "+selected+" value="+input[i][3]+">"+input[i][2]+"</option>";
+		selectHtml+="<option "+selected+" value="+input[i][3]+">"+input[i][2].toUpperCase()+"</option>";
 		if(selected==="selected"){
 			selected="";
 		}

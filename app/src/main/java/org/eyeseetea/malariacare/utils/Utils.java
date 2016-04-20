@@ -19,21 +19,31 @@
 
 package org.eyeseetea.malariacare.utils;
 
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+
 import com.raizlabs.android.dbflow.structure.BaseModel;
 
 import org.eyeseetea.malariacare.database.model.CompositeScore;
 import org.eyeseetea.malariacare.database.model.Header;
 import org.eyeseetea.malariacare.database.model.Question;
 import org.eyeseetea.malariacare.database.model.Tab;
+import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
+import org.eyeseetea.malariacare.layout.utils.QuestionRow;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 
 public class Utils {
 
@@ -64,7 +74,7 @@ public class Utils {
         return result;
     }
 
-    public static List<? extends BaseModel> preloadTabItems(Tab tab){
+    public static List preloadTabItems(Tab tab){
         List<? extends BaseModel> items = Session.getTabsCache().get(tab.getId_tab());
 
         if (tab.isCompositeScore())
@@ -79,7 +89,44 @@ public class Utils {
             }
             Session.getTabsCache().put(tab.getId_tab(), items);
         }
-        return items;
+
+        return compressTabItems(items);
+    }
+
+    /**
+     * Turns a list of headers, questions into a list of headers, questions and questionRows.
+     * @param items
+     * @return
+     */
+    public static List compressTabItems(List items){
+        List<Object> compressedItems = new ArrayList<>();
+        Iterator<Object> iterator = items.iterator();
+        QuestionRow lastRow=null;
+        while(iterator.hasNext()){
+            Object item = iterator.next();
+
+            //Header
+            if(item instanceof Header){
+                compressedItems.add(item);
+                continue;
+            }
+
+            //Normal question
+            if(item instanceof Question && !((Question)item).belongsToCustomTab()){
+                compressedItems.add(item);
+                continue;
+            }
+
+            //Custom tabs questions/titles
+            Question question = (Question) item;
+            //Question that belongs to a customtab
+            if(question.isCustomTabNewRow()){
+                lastRow = new QuestionRow();
+                compressedItems.add(lastRow);
+            }
+            lastRow.addQuestion(question);
+        }
+        return compressedItems;
     }
 
     public static StringBuilder convertFromInputStreamToString(InputStream inputStream){
@@ -98,4 +145,27 @@ public class Utils {
         return stringBuilder;
     }
 
+
+    public static String formatDate(Date date){
+        if(date==null){
+            return "-";
+        }
+        Locale locale = PreferencesState.getInstance().getContext().getResources().getConfiguration().locale;
+        DateFormat dateFormatter = DateFormat.getDateInstance(DateFormat.DEFAULT, locale);
+        return dateFormatter.format(date);
+    }
+
+
+    /**
+     * This method check if the Internet conexion is active
+     * @return return true if all is correct.
+     */
+    public static boolean isNetworkAvailable(){
+        ConnectivityManager cm =
+                (ConnectivityManager) PreferencesState.getInstance().getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo netInfo = cm.getActiveNetworkInfo();
+        if(netInfo==null)
+            return false;
+        return netInfo.isConnected();
+    }
 }

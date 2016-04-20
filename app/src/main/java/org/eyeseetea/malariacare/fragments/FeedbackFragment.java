@@ -35,7 +35,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ListView;
 import android.widget.ProgressBar;
-import android.widget.RadioGroup;
 import android.widget.RelativeLayout;
 
 
@@ -160,7 +159,7 @@ public class FeedbackFragment extends Fragment {
         progressBar=(ProgressBar)llLayout.findViewById(R.id.survey_progress);
 
         //Set adapter and list
-        feedbackAdapter=new FeedbackAdapter(getActivity().getApplicationContext());
+        feedbackAdapter=new FeedbackAdapter(getActivity());
         feedbackListView=(ListView)llLayout.findViewById(R.id.feedbackListView);
         feedbackListView.setAdapter(feedbackAdapter);
 

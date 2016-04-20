@@ -23,16 +23,25 @@ import android.util.Log;
 
 import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.database.iomodules.dhis.importer.models.DataElementExtended;
+import org.eyeseetea.malariacare.database.iomodules.dhis.importer.models.ProgramExtended;
+import org.eyeseetea.malariacare.database.iomodules.dhis.importer.models.ProgramStageExtended;
+import org.eyeseetea.malariacare.database.iomodules.dhis.importer.models.ProgramStageSectionExtended;
 import org.eyeseetea.malariacare.database.model.CompositeScore;
 import org.eyeseetea.malariacare.database.model.Header;;
 import org.eyeseetea.malariacare.database.model.Match;
 import org.eyeseetea.malariacare.database.model.Option;
+import org.eyeseetea.malariacare.database.model.Program;
 import org.eyeseetea.malariacare.database.model.Question;
 import org.eyeseetea.malariacare.database.model.QuestionOption;
 import org.eyeseetea.malariacare.database.model.QuestionRelation;
+import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.model.Tab;
+import org.eyeseetea.malariacare.database.model.TabGroup;
+import org.eyeseetea.malariacare.database.model.Value;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
+import org.hisp.dhis.android.sdk.controllers.metadata.MetaDataController;
 import org.hisp.dhis.android.sdk.persistence.models.DataElement;
+import org.hisp.dhis.android.sdk.persistence.models.ProgramStageDataElement;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,6 +55,10 @@ public class QuestionBuilder {
 
     private static final String TAG = ".QuestionBuilder";
 
+    /**
+     * It is the factor needed in a option to create the questionRelation
+     * */
+    private final float MATCHFACTOR=1f;
     /**
      * Mapping all the questions
      */
@@ -85,6 +98,10 @@ public class QuestionBuilder {
     static Map<String, Header> mapHeader;
 
     /**
+     * Mapping headers(it is needed for not duplicate data)
+     */
+    static Map<String, TabGroup> mapTabGroup;
+    /**
      * It is needed in the header order.
      */
     private int header_order = 0;
@@ -92,6 +109,7 @@ public class QuestionBuilder {
     QuestionBuilder() {
         mapQuestions = new HashMap<>();
         mapHeader = new HashMap<>();
+        mapTabGroup = new HashMap<>();
         mapType = new HashMap<>();
         mapLevel = new HashMap<>();
         mapParent = new HashMap<>();
@@ -116,21 +134,13 @@ public class QuestionBuilder {
      * @param dataElementExtended
      * @return question header
      */
-    public Header saveHeader(DataElementExtended dataElementExtended) {
+    public Header saveHeader(DataElementExtended dataElementExtended,TabGroupBuilder tabGroupBuilder) {
         Header header = null;
         String attributeHeaderValue = dataElementExtended.getValue(DataElementExtended.ATTRIBUTE_HEADER_NAME);
         if (attributeHeaderValue != null) {
             Tab questionTab;
+            questionTab=tabGroupBuilder.saveTabGroup(dataElementExtended);
             String tabUid = dataElementExtended.findProgramStageSectionUIDByDataElementUID(dataElementExtended.getDataElement().getUid());
-            if(ConvertFromSDKVisitor.appMapObjects.containsKey(tabUid)) {
-                questionTab = (Tab) ConvertFromSDKVisitor.appMapObjects.get(tabUid);
-                if(mapHeader.containsKey(tabUid+attributeHeaderValue)){
-                        if(!mapHeader.get(tabUid+attributeHeaderValue).getTab().getName().equals(questionTab.getName()))
-                            Log.d("Bug","Header with other tab"+header.getName()+" othertab "+questionTab.getName()+ "uid" + dataElementExtended.getDataElement().getUid());
-                }
-            }
-            else
-            questionTab=null;
 
             if(!mapHeader.containsKey(tabUid+attributeHeaderValue)) {
                 header = new Header();
@@ -147,9 +157,8 @@ public class QuestionBuilder {
             }
             if(questionTab==null) {
                 header=null;
+                return header;
             }
-
-
 
         }
         return header;
@@ -249,10 +258,10 @@ public class QuestionBuilder {
                         boolean isSaved=false;
                         Question parentQuestion = mapQuestions.get(parentuid);
                         List<Option> options = parentQuestion.getAnswer().getOptions();
-                        for (Option option : options) {
-                            if (option.getName().equals(PreferencesState.getInstance().getContext().getResources().getString(R.string.yes))) {
+                        for (Option option : options)
+                        {
+                            if (option.getFactor()==MATCHFACTOR) {
                                 if(!isSaved) {
-                                    //the questionRelation only created if have child with yes option
                                     questionRelation.save();
                                     isSaved=true;
                                 }
@@ -301,4 +310,5 @@ public class QuestionBuilder {
             }
         }
     }
+
 }

@@ -22,7 +22,6 @@ package org.eyeseetea.malariacare.layout.adapters.survey;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
 import android.content.Context;
-import android.graphics.Typeface;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -41,19 +40,16 @@ import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.database.model.Program;
 import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
-import org.eyeseetea.malariacare.database.utils.Session;
 import org.eyeseetea.malariacare.database.utils.planning.PlannedHeader;
 import org.eyeseetea.malariacare.database.utils.planning.PlannedItem;
 import org.eyeseetea.malariacare.database.utils.planning.PlannedItemBuilder;
 import org.eyeseetea.malariacare.database.utils.planning.PlannedSurvey;
-import org.eyeseetea.malariacare.database.utils.planning.SurveyPlanner;
 import org.eyeseetea.malariacare.utils.Constants;
+import org.eyeseetea.malariacare.utils.Utils;
 
-import java.text.DateFormat;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Created by arrizabalaga on 14/09/15.
@@ -80,6 +76,11 @@ public class PlannedAdapter extends BaseAdapter {
      * Number of items shown according to the selected section and filter
      */
     int numShown;
+
+    /**
+     * Item order in the block tab(init in the header tab).
+     */
+    int itemOrder;
 
     public PlannedAdapter(List<PlannedItem> items, Context context){
         this.items=items;
@@ -196,9 +197,10 @@ public class PlannedAdapter extends BaseAdapter {
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
-        Log.d(TAG,"getView: "+position);
+        Log.d(TAG, "getView: " + position);
         PlannedItem plannedItem=(PlannedItem)getItem(position);
         if (plannedItem instanceof PlannedHeader){
+            itemOrder =0;
             return getViewByPlannedHeader((PlannedHeader) plannedItem, parent);
         }else{
             return getViewByPlannedSurvey(position, (PlannedSurvey) plannedItem, parent);
@@ -217,7 +219,8 @@ public class PlannedAdapter extends BaseAdapter {
 
         //Set image color
         if(plannedHeader.equals(currentHeader)){
-            img.setColorFilter(PreferencesState.getInstance().getContext().getResources().getColor(plannedHeader.getBackgroundColor()));
+            img.setImageResource(R.drawable.ic_media_arrow_up);
+            img.setColorFilter(PreferencesState.getInstance().getContext().getResources().getColor(R.color.white));
         }
         else{
             if(plannedHeader.getCounter()==0)
@@ -225,7 +228,7 @@ public class PlannedAdapter extends BaseAdapter {
             else
                 img.setColorFilter(PreferencesState.getInstance().getContext().getResources().getColor(R.color.white));
         }
-
+/*
         //Productivity
         textView=(TextView)rowLayout.findViewById(R.id.planning_prod);
         textView.setText(plannedHeader.getProductivityHeader());
@@ -236,7 +239,7 @@ public class PlannedAdapter extends BaseAdapter {
 
         //Next
         textView=(TextView)rowLayout.findViewById(R.id.planning_next);
-        textView.setText(plannedHeader.getNextHeader());
+        textView.setText(plannedHeader.getNextHeader());*/
 
         //Planned header -> toggleSection
         rowLayout.setOnClickListener(new OpenHeaderListener(plannedHeader));
@@ -244,7 +247,7 @@ public class PlannedAdapter extends BaseAdapter {
     }
 
     private View getViewByPlannedSurvey(int position,final PlannedSurvey plannedSurvey, ViewGroup parent){
-
+        itemOrder++;
         LayoutInflater inflater=LayoutInflater.from(context);
         LinearLayout rowLayout = (LinearLayout)inflater.inflate(R.layout.planning_survey_row, parent, false);
 
@@ -269,12 +272,13 @@ public class PlannedAdapter extends BaseAdapter {
 
         //ScheduledDate
         textView=(TextView)rowLayout.findViewById(R.id.planning_survey_schedule_date);
-        textView.setText(formatScheduledDate(plannedSurvey.getNextAssesment()));
+        textView.setText(Utils.formatDate(plannedSurvey.getNextAssesment()));
         textView.setOnClickListener(new ScheduleListener(plannedSurvey.getSurvey()));
 
         //background color
         int colorId=plannedSurvey.getPlannedHeader().getSecondaryColor();
-        if(position==0 || position%2==0)
+        int fixposition= itemOrder -1;
+        if(fixposition==0 || fixposition%2==0)
             rowLayout.setBackgroundColor(PreferencesState.getInstance().getContext().getResources().getColor(R.color.white));
         else
             rowLayout.setBackgroundColor(PreferencesState.getInstance().getContext().getResources().getColor(colorId));
@@ -282,6 +286,8 @@ public class PlannedAdapter extends BaseAdapter {
         ImageButton actionButton = (ImageButton)rowLayout.findViewById(R.id.planning_survey_action);
         colorId=plannedSurvey.getPlannedHeader().getBackgroundColor();
         if(plannedSurvey.getSurvey().isInProgress()){
+            if(plannedSurvey.getSurvey().getStatus()!=Constants.SURVEY_PLANNED)
+                colorId=plannedSurvey.getPlannedHeader().getGaudyBackgroundColor();
             actionButton.setImageResource(R.drawable.ic_edit);
         }
         else{
@@ -305,15 +311,6 @@ public class PlannedAdapter extends BaseAdapter {
         return plannedSurvey.getOrgUnit().equals(previousPlannedSurvey.getOrgUnit());
     }
 
-    private String formatScheduledDate(Date date){
-        if(date==null){
-            return "-";
-        }
-        Locale locale = context.getResources().getConfiguration().locale;
-        DateFormat dateFormatter = DateFormat.getDateInstance(DateFormat.DEFAULT, locale);
-        return dateFormatter.format(date);
-    }
-
     /**
      * Listener that starts the given planned survey and goes to surveyActivity to start with edition
      */
@@ -328,15 +325,16 @@ public class PlannedAdapter extends BaseAdapter {
         @Override
         public void onClick(View v) {
             DashboardActivity activity = ((DashboardActivity) context);
-            if(survey.getStatus()==Constants.SURVEY_PLANNED){
-                survey=SurveyPlanner.getInstance().startSurvey(survey);
-            }
-
-            Session.setSurvey(survey);
-            activity.prepareLocationListener(survey);
-            //FIXME
-
-            activity.initSurveyFromPlanning();
+            activity.onSurveySelected(survey);
+//            if(survey.getStatus()==Constants.SURVEY_PLANNED){
+//                survey=SurveyPlanner.getInstance().startSurvey(survey);
+//            }
+//
+//            Session.setSurvey(survey);
+//            activity.prepareLocationListener(survey);
+//            //FIXME
+//
+//            activity.initSurveyFromPlanning();
         }
     }
 
@@ -371,15 +369,15 @@ public class PlannedAdapter extends BaseAdapter {
 
             //Set current date
             final Button scheduleDatePickerButton=(Button)dialog.findViewById(R.id.planning_dialog_picker_button);
-            scheduleDatePickerButton.setText(formatScheduledDate(survey.getScheduledDate()));
+            scheduleDatePickerButton.setText(Utils.formatDate(survey.getScheduleDate()));
             //On Click open an specific DatePickerDialog
             scheduleDatePickerButton.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     //Init secondary datepicker with current date
                     Calendar calendar = Calendar.getInstance();
-                    if(survey.getScheduledDate()!=null){
-                        calendar.setTime(survey.getScheduledDate());
+                    if(survey.getScheduleDate()!=null){
+                        calendar.setTime(survey.getScheduleDate());
                     }
                     //Show datepickerdialog -> updates newScheduledDate and button
                     new DatePickerDialog(PlannedAdapter.this.context, new DatePickerDialog.OnDateSetListener() {
@@ -388,7 +386,7 @@ public class PlannedAdapter extends BaseAdapter {
                             Calendar newCalendar = Calendar.getInstance();
                             newCalendar.set(year, monthOfYear, dayOfMonth);
                             newScheduledDate = newCalendar.getTime();
-                            scheduleDatePickerButton.setText(formatScheduledDate(newScheduledDate));
+                            scheduleDatePickerButton.setText(Utils.formatDate(newScheduledDate));
                         }
 
                     },calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show();
@@ -427,7 +425,7 @@ public class PlannedAdapter extends BaseAdapter {
         }
 
         private boolean validateFields(Date newDate,String comment){
-            return newDate!=null && comment!=null && comment.length()>0;
+            return newDate!=null;
         }
 
 
