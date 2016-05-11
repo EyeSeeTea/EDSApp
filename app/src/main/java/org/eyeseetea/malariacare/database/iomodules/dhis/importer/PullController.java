@@ -39,6 +39,8 @@ import org.eyeseetea.malariacare.database.utils.PopulateDB;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
 import org.eyeseetea.malariacare.database.utils.planning.SurveyPlanner;
+import org.eyeseetea.malariacare.layout.dashboard.builder.AppSettingsBuilder;
+import org.eyeseetea.malariacare.layout.dashboard.config.AppSettings;
 import org.hisp.dhis.android.sdk.controllers.DhisService;
 import org.hisp.dhis.android.sdk.controllers.LoadingController;
 import org.hisp.dhis.android.sdk.controllers.metadata.MetaDataController;
@@ -54,6 +56,7 @@ import org.hisp.dhis.android.sdk.persistence.models.OrganisationUnit;
 import org.hisp.dhis.android.sdk.persistence.models.OrganisationUnitLevel;
 import org.hisp.dhis.android.sdk.persistence.models.ProgramStage;
 import org.hisp.dhis.android.sdk.persistence.models.ProgramStageDataElement;
+import org.hisp.dhis.android.sdk.persistence.preferences.AppPreferences;
 import org.hisp.dhis.android.sdk.persistence.preferences.ResourceType;
 import org.hisp.dhis.android.sdk.utils.api.ProgramType;
 import org.hisp.dhis.android.sdk.utils.log.LogMessage;
@@ -156,7 +159,7 @@ public class PullController {
             Calendar month = Calendar.getInstance();
             month.add(Calendar.MONTH, -NUMBER_OF_MONTHS);
             TrackerController.setStartDate(EventExtended.format(month.getTime(),EventExtended.AMERICAN_DATE_FORMAT));
-
+            MetaDataController.setFullOrganisationUnitHierarchy(AppSettingsBuilder.isFullHierarchy());
             MetaDataController.clearMetaDataLoadedFlags();
             MetaDataController.wipe();
             PopulateDB.wipeSDKData();
@@ -330,18 +333,22 @@ public class PullController {
         Map<String, List<DataElement>> programsDataelements = new HashMap<>();
         if (!ProgressActivity.PULL_IS_ACTIVE) return;
         for (org.hisp.dhis.android.sdk.persistence.models.Program program : programs) {
+            Log.i(TAG,String.format("\t program '%s' ",program.getName()));
             List<DataElement> dataElements = new ArrayList<>();
             String programUid = program.getUid();
             List<ProgramStage> programStages = program.getProgramStages();
             for (org.hisp.dhis.android.sdk.persistence.models.ProgramStage programStage : programStages) {
+                Log.i(TAG,String.format("\t\t programStage '%s' ",program.getName()));
                 List<ProgramStageDataElement> programStageDataElements = programStage.getProgramStageDataElements();
                 for (ProgramStageDataElement programStageDataElement : programStageDataElements) {
-                    if (programStageDataElement.getDataElement().getUid() != null) {
+                    DataElement dataElement =programStageDataElement.getDataElement();
+                    if (dataElement!=null && dataElement.getUid() != null) {
                         if (!ProgressActivity.PULL_IS_ACTIVE) return;
-                        dataElements.add(programStageDataElement.getDataElement());
+                        dataElements.add(dataElement);
                     }
                 }
             }
+            Log.i(TAG,String.format("\t program '%s' DONE ",program.getName()));
             if (!ProgressActivity.PULL_IS_ACTIVE) return;
             Collections.sort(dataElements, new Comparator<DataElement>() {
                 public int compare(DataElement de1, DataElement de2) {

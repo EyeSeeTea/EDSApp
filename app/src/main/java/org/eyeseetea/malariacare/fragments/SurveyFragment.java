@@ -51,16 +51,12 @@ import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
 import org.eyeseetea.malariacare.layout.adapters.general.TabArrayAdapter;
 import org.eyeseetea.malariacare.layout.adapters.survey.AutoTabAdapter;
-import org.eyeseetea.malariacare.layout.adapters.survey.CompositeScoreAdapter;
-import org.eyeseetea.malariacare.layout.adapters.survey.CustomAdherenceAdapter;
-import org.eyeseetea.malariacare.layout.adapters.survey.CustomIQTABAdapter;
-import org.eyeseetea.malariacare.layout.adapters.survey.CustomReportingAdapter;
 import org.eyeseetea.malariacare.layout.adapters.survey.ITabAdapter;
 import org.eyeseetea.malariacare.layout.score.ScoreRegister;
 import org.eyeseetea.malariacare.layout.utils.LayoutUtils;
 import org.eyeseetea.malariacare.services.SurveyService;
 import org.eyeseetea.malariacare.utils.Constants;
-import org.eyeseetea.malariacare.utils.Utils;
+import org.eyeseetea.malariacare.utils.AUtils;
 import org.eyeseetea.malariacare.views.CustomTextView;
 
 import java.util.ArrayList;
@@ -430,7 +426,7 @@ public class SurveyFragment extends  Fragment {
         int viewId=IDS_SCORES_IN_GENERAL_TAB[tab.getOrder_pos()];
         if(viewId!=0) {
             CustomTextView customTextView =((CustomTextView) llLayout.findViewById(viewId));
-            customTextView.setText(Utils.round(score));
+            customTextView.setText(AUtils.round(score));
             LayoutUtils.trafficLight(customTextView, score, null);
         }
     }
@@ -486,7 +482,7 @@ public class SurveyFragment extends  Fragment {
     }
 
     private void updateAvgInGeneralScores(int viewId, Float score){
-        ((CustomTextView) llLayout.findViewById(viewId)).setText(Utils.round(score));
+        ((CustomTextView) llLayout.findViewById(viewId)).setText(AUtils.round(score));
         LayoutUtils.trafficLight(llLayout.findViewById(viewId), score, null);
     }
 
@@ -698,17 +694,6 @@ public class SurveyFragment extends  Fragment {
          * @return
          */
         private ITabAdapter buildAdapter(Tab tab){
-            switch (tab.getType()) {
-                case Constants.TAB_COMPOSITE_SCORE:
-                    return CompositeScoreAdapter.build(tab, getActivity());
-                case Constants.TAB_IQATAB:
-                    return CustomIQTABAdapter.build(tab,  getActivity());
-                case Constants.TAB_ADHERENCE:
-                    return CustomAdherenceAdapter.build(tab,  getActivity());
-                case Constants.TAB_REPORTING:
-                    return CustomReportingAdapter.build(tab,  getActivity());
-            }
-
             return AutoTabAdapter.build(tab, getActivity());
         }
     }

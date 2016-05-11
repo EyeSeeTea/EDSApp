@@ -28,6 +28,7 @@ import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.layout.dashboard.config.AppSettings;
 import org.eyeseetea.malariacare.layout.dashboard.config.DashboardOrientation;
 import org.eyeseetea.malariacare.layout.dashboard.config.DashboardSettings;
+import org.eyeseetea.malariacare.layout.dashboard.config.DatabaseOriginType;
 import org.eyeseetea.malariacare.layout.dashboard.config.ModuleSettings;
 import org.eyeseetea.malariacare.layout.dashboard.controllers.DashboardController;
 import org.eyeseetea.malariacare.layout.dashboard.controllers.ModuleController;
@@ -61,8 +62,16 @@ public class AppSettingsBuilder {
         return instance;
     }
 
+    public static DatabaseOriginType getDatabaseOriginType(){
+        return getInstance().getSettings().getDatabaseSettings().getOriginType();
+    }
+
     public static DashboardOrientation getDashboardOrientation(){
         return getInstance().getSettings().getDashboardSettings().getOrientation();
+    }
+
+    public static boolean isFullHierarchy(){
+        return getInstance().getSettings().getDatabaseSettings().isFullHierarchy();
     }
 
     public void init(Context context){

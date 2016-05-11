@@ -31,7 +31,7 @@ import org.eyeseetea.malariacare.database.model.Value;
 import org.eyeseetea.malariacare.database.utils.LocationMemory;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.layout.score.ScoreRegister;
-import org.eyeseetea.malariacare.utils.Utils;
+import org.eyeseetea.malariacare.utils.AUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -48,19 +48,20 @@ public class QueryFormatterUtils {
 
     private static String TAG_PROGRAM = "program";
     private static String TAG_ORG_UNIT = "orgUnit";
-    private static String TAG_EVENTDATE = "eventDate";
+
     private static String TAG_EVENT = "event";
     private static String TAG_STATUS = "status";
     private static String TAG_STOREDBY = "storedBy";
     private static String TAG_COORDINATE = "coordinate";
     private static String TAG_COORDINATE_LAT = "latitude";
     private static String TAG_COORDINATE_LNG = "longitude";
+    private static String TAG_EVENTDATE = "eventDate";
 
     private static String TAG_DATAVALUES = "dataValues";
     private static String TAG_DATAELEMENT = "dataElement";
     private static String TAG_VALUE = "value";
 
-    private static String TAG_STARTDATE = "startDate";
+    private static String QUERY_LAST_EVENTS_FROM_DATE="?orgUnit=%s&program=%s&startDate=%s&fields=[event,eventDate,lastUpdated,created]&skipPaging=true";
 
     /**
      * Singleton reference
@@ -82,22 +83,14 @@ public class QueryFormatterUtils {
 
     /**
      * Adds metadata info to json object to get the last events
-     *
+     * Ex: https://eds-dev-ci.psi-mis.org/api/events?orgUnit=QS7sK8XzdQc&program=wK0958s1bdj&startDate=2016-1-01&fields=[event,eventDate,lastUpdated,created]
      * @return JSONObject with program, orgunit and lastDate
      * @throws Exception
      */
     public String prepareLastEventData(String orgUnit, String program, Date lastDate) {
-        String query="";
-        query="?"+query+TAG_PROGRAM+"="+program;
-
-        query=query+"&"+TAG_ORG_UNIT+"="+orgUnit;
-
-        query=query+"&"+TAG_STARTDATE+"="+android.text.format.DateFormat.format(EventExtended.AMERICAN_DATE_FORMAT, lastDate);
-
-        query=query+"&fields=["+TAG_EVENT+","+PullClient.DATE_FIELD +"]"+"&skipPaging=true";
-        Log.d(TAG, "prepareLastEventData: " + query);
-
-        return query;
+        String formattedQuery = String.format(QUERY_LAST_EVENTS_FROM_DATE, orgUnit,program,EventExtended.formatShort(lastDate));
+        Log.d(TAG, "prepareLastEventData-> " + formattedQuery);
+        return formattedQuery;
     }
     /**
      * Adds metadata info to json object
@@ -247,7 +240,7 @@ public class QueryFormatterUtils {
     private JSONObject prepareValue(CompositeScore compositeScore) throws Exception {
         JSONObject elementObject = new JSONObject();
         elementObject.put(TAG_DATAELEMENT, compositeScore.getUid());
-        elementObject.put(TAG_VALUE, Utils.round(ScoreRegister.getCompositeScore(compositeScore)));
+        elementObject.put(TAG_VALUE, AUtils.round(ScoreRegister.getCompositeScore(compositeScore)));
         return elementObject;
     }
 
