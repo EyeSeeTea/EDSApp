@@ -37,8 +37,9 @@ import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
 import org.eyeseetea.malariacare.layout.score.ScoreRegister;
 import org.eyeseetea.malariacare.network.PullClient;
-import org.eyeseetea.malariacare.utils.AUtils;
+import org.eyeseetea.malariacare.layout.score.ScoreUtils;
 import org.eyeseetea.malariacare.utils.Constants;
+import org.eyeseetea.malariacare.utils.AUtils;
 import org.hisp.dhis.android.sdk.controllers.tracker.TrackerController;
 import org.hisp.dhis.android.sdk.persistence.models.DataValue;
 import org.hisp.dhis.android.sdk.persistence.models.Event;
@@ -258,13 +259,17 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
 
     @Override
     public void visit(CompositeScore compositeScore) {
+        List<Float> result=ScoreRegister.getCompositeScoreResult(compositeScore,currentSurvey.getId_survey(), Constants.PUSH_MODULE_KEY);
+        //Checks if the result have at least one valid denominator.
+        if(result!=null && result.get(1)==0)
+            return;
         DataValue dataValue=new DataValue();
         dataValue.setDataElement(compositeScore.getUid());
         dataValue.setLocalEventId(currentEvent.getLocalId());
         dataValue.setEvent(currentEvent.getEvent());
         dataValue.setProvidedElsewhere(false);
         dataValue.setStoredBy(getSafeUsername());
-        dataValue.setValue(AUtils.round(ScoreRegister.getCompositeScore(compositeScore,currentSurvey.getId_survey(), Constants.PUSH_MODULE_KEY)));
+        dataValue.setValue(AUtils.round(ScoreUtils.calculateScoreFromNumDen(result)));
         dataValue.save();
     }
 
@@ -351,12 +356,12 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         //It Checks if the dataelement exists, before build and save the datavalue
         //Created date
         if(controlDataElementExistsInServer(createdOnCode)){
-            addDataValue(createdOnCode, EventExtended.format(survey.getCreationDate(), EventExtended.AMERICAN_DATE_FORMAT));
+            addDataValue(createdOnCode, EventExtended.format(survey.getCreationDate(), EventExtended.DHIS2_GMT_DATE_FORMAT));
         }
 
         //Updated date
         if(controlDataElementExistsInServer(updatedDateCode)){
-            addOrUpdateDataValue(updatedDateCode, EventExtended.format(survey.getUploadDate(), EventExtended.AMERICAN_DATE_FORMAT));
+            addOrUpdateDataValue(updatedDateCode, EventExtended.format(survey.getUploadDate(), EventExtended.DHIS2_GMT_DATE_FORMAT));
         }
 
         //Updated by user
@@ -468,12 +473,10 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
                 continue;
             }
 
-            if(importSummary==null){
+            if(importSummary==null)
                 rollbackSurvey(iSurvey);
-            }
-
-            //Errors
-            Log.d(TAG, importSummary.toString());
+            else
+                Log.d(TAG, importSummary.toString());
             //Some error happened -> move back to completed
             if(failedItem!=null) {
                 rollbackSurvey(iSurvey);
