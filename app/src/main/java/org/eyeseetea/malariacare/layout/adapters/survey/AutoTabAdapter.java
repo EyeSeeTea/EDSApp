@@ -42,6 +42,7 @@ import android.widget.Spinner;
 import android.widget.Switch;
 
 import org.eyeseetea.malariacare.R;
+import org.eyeseetea.malariacare.database.iomodules.dhis.importer.models.EventExtended;
 import org.eyeseetea.malariacare.database.model.Header;
 import org.eyeseetea.malariacare.database.model.Option;
 import org.eyeseetea.malariacare.database.model.Question;
@@ -49,7 +50,6 @@ import org.eyeseetea.malariacare.database.model.Tab;
 import org.eyeseetea.malariacare.database.model.Value;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.ReadWriteDB;
-import org.eyeseetea.malariacare.database.utils.Session;
 import org.eyeseetea.malariacare.layout.adapters.general.OptionArrayAdapter;
 import org.eyeseetea.malariacare.layout.score.ScoreRegister;
 import org.eyeseetea.malariacare.layout.utils.AutoTabInVisibilityState;
@@ -501,6 +501,12 @@ public class AutoTabAdapter extends ATabAdapter {
 
         switch (question.getOutput()) {
             case Constants.DATE:
+                String valueString=ReadWriteDB.readValueQuestion(question, module);
+                Date valueDate=EventExtended.parseShortDate(valueString);
+                if(valueDate!=null) {
+                    viewHolder.setText(ReadWriteDB.readValueQuestion(question, module));
+                }
+                break;
             case Constants.SHORT_TEXT:
             case Constants.INT:
             case Constants.LONG_TEXT:
@@ -511,12 +517,14 @@ public class AutoTabAdapter extends ATabAdapter {
             case Constants.DROPDOWN_LIST_DISABLED:
                 viewHolder.setSpinnerSelection(ReadWriteDB.readPositionOption(question, module));
                 List<Float> numdenum = ScoreRegister.getNumDenum(question, idSurvey, module);
+                viewHolder.setDenumText(getContext().getString(R.string.number_zero));
+                viewHolder.setNumText(getContext().getString(R.string.number_zero));
                 if (numdenum != null) {
-                    viewHolder.setNumText(Float.toString(numdenum.get(0)));
-                    viewHolder.setDenumText(Float.toString(numdenum.get(1)));
+                    if(numdenum.get(0)!=null) {
+                        viewHolder.setNumText(Float.toString(numdenum.get(0)));
+                        viewHolder.setDenumText(Float.toString(numdenum.get(1)));
+                    }
                 } else {
-                    viewHolder.setNumText(getContext().getString(R.string.number_zero));
-                    viewHolder.setDenumText(Float.toString(ScoreRegister.calcDenum(question, idSurvey)));
                     viewHolder.setSpinnerSelection(0);
                 }
 
@@ -526,16 +534,15 @@ public class AutoTabAdapter extends ATabAdapter {
                 //FIXME: it is almost the same as the previous case
                 Value value = question.getValueBySession(module);
                 List<Float> numdenumradiobutton = ScoreRegister.getNumDenum(question, idSurvey, module);
-                if (numdenumradiobutton == null) { //FIXME: this avoid app crash when onResume
+                if (numdenumradiobutton == null) {// FIXME: this avoid app crash when onResume
                     break;
                 }
+                viewHolder.setDenumText(numdenumradiobutton.get(1).toString());
+                viewHolder.setNumText(getContext().getString(R.string.number_zero));
+
                 if (value != null) {
                     viewHolder.setRadioChecked(value.getOption());
                     viewHolder.setNumText(Float.toString(numdenumradiobutton.get(0)));
-                    viewHolder.setDenumText(Float.toString(numdenumradiobutton.get(1)));
-                } else {
-                    viewHolder.setNumText(getContext().getString(R.string.number_zero));
-                    viewHolder.setDenumText(Float.toString(ScoreRegister.calcDenum(question, idSurvey)));
                 }
                 break;
             case Constants.SWITCH_BUTTON:
@@ -722,8 +729,8 @@ public class AutoTabAdapter extends ATabAdapter {
                     newCalendar.set(year, monthOfYear, dayOfMonth);
                     Date newScheduledDate = newCalendar.getTime();
                     if(!isCleared) {
-                        ((CustomButton) v).setText( AUtils.formatDate(newCalendar.getTime()));
-                        ReadWriteDB.saveValuesText(question, AUtils.formatDate(newCalendar.getTime()), module);
+                        ((CustomButton) v).setText( AUtils.formatDate(newScheduledDate));
+                        ReadWriteDB.saveValuesText(question, EventExtended.formatShort(newScheduledDate), module);
                     }
                     isCleared =false;
                 }

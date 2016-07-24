@@ -87,10 +87,10 @@ public class AUtils {
     }
 
     public static List preloadTabItems(Tab tab, String module){
-        List<? extends BaseModel> items = Session.getTabsCache().get(tab.getId_tab());
+        List<? extends BaseModel> items;
 
         if (tab.isCompositeScore())
-            items = CompositeScore.listByTabGroup(Session.getSurveyByModule(module).getTabGroup());
+            items = CompositeScore.listByProgram(Session.getSurveyByModule(module).getProgram());
 
         else{
 
@@ -164,6 +164,17 @@ public class AUtils {
         }
         Locale locale = PreferencesState.getInstance().getContext().getResources().getConfiguration().locale;
         DateFormat dateFormatter = DateFormat.getDateInstance(DateFormat.DEFAULT, locale);
+        return dateFormatter.format(date);
+    }
+
+    public static String formatDateToServer(Date date){
+        if(date==null){
+            return "";
+        }
+        Locale locale = PreferencesState.getInstance().getContext().getResources().getConfiguration().locale;
+        DateFormat dateFormatter = DateFormat.getDateInstance(DateFormat.DEFAULT, locale);
+
+
         return dateFormatter.format(date);
     }
 
@@ -260,10 +271,6 @@ public class AUtils {
         TextView textTile = (TextView) dialog.findViewById(R.id.aboutTitle);
         textTile.setText(BuildConfig.VERSION_NAME);
         textTile.setGravity(Gravity.RIGHT);
-
-        //set up image view
-        ImageView img = (ImageView) dialog.findViewById(R.id.aboutImage);
-        img.setImageResource(R.drawable.psi);
 
         //set up text title
         TextView textContent = (TextView) dialog.findViewById(R.id.aboutMessage);
