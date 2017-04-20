@@ -8,12 +8,15 @@
     <dimen name="survey_main_spinner_padding_leftright">40dip</dimen>
     <dimen name="survey_main_spinner_padding_updown">10dip</dimen>
 
+    <!-- Create survey fragment -->
+    <dimen name="level_padding_left">10dp</dimen>
     <!-- Dashboard -->
     <dimen name="dashboard_row_padding">5dp</dimen>
 
     <!-- Planning -->
     <dimen name="dashboard_planning_padding">10dp</dimen>
     <dimen name="dashboard_planning_alert_width">300dp</dimen>
+    <dimen name="checkbox_text_top_padding">5dp</dimen>
 
     <!-- Filters padding top and buttom -->
     <dimen name="filters_top_bottom_padding">10dp</dimen>
@@ -53,6 +56,8 @@
     <dimen name="extra_large_text_size">34sp</dimen>
     <dimen name="extra_xlarge_text_size">36sp</dimen>
 
+    <!-- spinner padding -->
+    <dimen name="create_survey_spinner_padding">2dip</dimen>
     <!-- survey row padding -->
     <dimen name="survey_row_marging">14dip</dimen>
     <!-- title in createsurveyfragment marging-->
@@ -60,12 +65,13 @@
     <!-- left padding for button in feedbackfragment !-->
     <dimen name="margin_lateral_feedback_radiobutton">15dip</dimen>
     <dimen name="margin_feedback_top_bottom_radiobutton">8dip</dimen>
+    <dimen name="min_image_width">200dip</dimen>
 
-    <!--Text size for age and phone-->
-    <dimen name="input_number_edit_text">32dp</dimen>
 
     <!-- Arrow padding !-->
     <dimen name="left_padding_arrow">30dip</dimen>
     <dimen name="right_padding_arrow">30dip</dimen>
 
+    <!--Text size for age and phone-->
+    <dimen name="input_number_edit_text">32dp</dimen>
 </resources>

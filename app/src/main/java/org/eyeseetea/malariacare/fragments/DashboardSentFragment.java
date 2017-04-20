@@ -28,7 +28,6 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
@@ -47,10 +46,13 @@ import org.eyeseetea.malariacare.database.model.Program;
 import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
+import org.eyeseetea.malariacare.database.utils.multikeydictionaries.ProgramOUSurveyDict;
+import org.eyeseetea.malariacare.database.utils.services.BaseServiceBundle;
 import org.eyeseetea.malariacare.layout.adapters.dashboard.AssessmentSentAdapter;
 import org.eyeseetea.malariacare.layout.adapters.dashboard.IDashboardAdapter;
 import org.eyeseetea.malariacare.layout.adapters.filters.FilterOrgUnitArrayAdapter;
 import org.eyeseetea.malariacare.layout.adapters.filters.FilterProgramArrayAdapter;
+import org.eyeseetea.malariacare.layout.dashboard.controllers.DashboardController;
 import org.eyeseetea.malariacare.layout.listeners.SwipeDismissListViewTouchListener;
 import org.eyeseetea.malariacare.services.SurveyService;
 import org.eyeseetea.malariacare.views.CustomTextView;
@@ -60,6 +62,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A placeholder fragment containing a simple view.
@@ -75,18 +78,30 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
     private static int LAST_ORDER =WITHOUT_ORDER;
 
     private SurveyReceiver surveyReceiver;
-    private List<Survey> surveys;
     protected IDashboardAdapter adapter;
+    //surveys contains all the surveys without filter
+    private List<Survey> surveys;
+    //oneSurveyForOrgUnit contains the filtered orgunit list
     List<Survey> oneSurveyForOrgUnit;
+    //orgUnitList contains the list of all orgUnits
     List<OrgUnit> orgUnitList;
-    List <Program> programList;
+    //programList contains the list of all prgorams
+    List<Program> programList;
     Spinner filterSpinnerOrgUnit;
     Spinner filterSpinnerProgram;
+    //orgUnitFilter contains the selected orgUnit uid
     String orgUnitFilter;
+    //programFilter contains the selected program name
     String programFilter;
+    //orderBy contains the selected order
     int orderBy=WITHOUT_ORDER;
+    //reverse contains the selected order asc or desc
     static boolean reverse=false;
     DashboardActivity dashboardActivity;
+    /*
+    ** Flag to prevents the false click on filter creation.
+     */
+    boolean initiatingFilters =true;
 
     public DashboardSentFragment() {
         this.adapter = Session.getAdapterSent();
@@ -104,6 +119,13 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
 
         return f;
     }
+
+
+    // Container Activity must implement this interface
+    public interface OnFeedbackSelectedListener {
+        public void onFeedbackSelected(Survey survey);
+    }
+
 
     @Override
     public void onAttach(Activity activity) {
@@ -133,13 +155,14 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
     public void onActivityCreated(Bundle savedInstanceState) {
         Log.d(TAG, "onActivityCreated");
         super.onActivityCreated(savedInstanceState);
-
-//        hideContainer();
-//        //Loading...
-//        if(isAdded())
-//            setListShown(false);
         initAdapter();
         initListView();
+        resetList();
+    }
+
+    public void resetList() {
+        adapter.setItems(oneSurveyForOrgUnit);
+        this.adapter.notifyDataSetChanged();
         initLongListClick();
     }
 
@@ -150,7 +173,7 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
                 if(isPositionASurvey(position)){
                     // call onSurveySelected function(and it call surveyfragment.
                     // to looks only as read mode the survey should be iscompleted or issent)-
-                    dashboardActivity.onSurveySelected(surveys.get(position - 1));
+                    dashboardActivity.onSurveySelected(oneSurveyForOrgUnit.get(position - 1));
                 }
 
                 return true;
@@ -161,21 +184,22 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
     @Override
     public void onResume(){
         Log.d(TAG, "onResume");
-        //Loading...
-        setListShown(false);
         //Listen for data
         registerSurveysReceiver();
         super.onResume();
     }
 
-    private void initProgramFilters(){
+    private void initProgramFilters() {
+        initiatingFilters=true;
         filterSpinnerProgram = (Spinner) getActivity().findViewById(R.id.filter_program);
+        if(filterSpinnerProgram == null)
+            return;
         List<Program> filterProgramList= programList;
         Program defaultAllProgramFilter=new Program();
         defaultAllProgramFilter.setName(getActivity().getString(R.string.filter_all_org_assessments).toUpperCase());
         filterProgramList.add(0, defaultAllProgramFilter);
         if(programFilter ==null) {
-            programFilter = defaultAllProgramFilter.getName();
+            programFilter = defaultAllProgramFilter.getUid();
         }
         filterSpinnerProgram.setAdapter(new FilterProgramArrayAdapter(this.getActivity().getApplicationContext(), filterProgramList));
         filterSpinnerProgram.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -191,13 +215,13 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
                         reload = true;
                     }
                 } else {
-                    if (programFilter != program.getName()) {
-                        programFilter = program.getName();
+                    if (programFilter != program.getUid()) {
+                        programFilter = program.getUid();
                         reload = true;
                     }
                 }
-                if (reload)
-                    reloadSentSurveys();
+                if(reload && !initiatingFilters)
+                    reloadSentSurveys(surveys);
             }
 
             @Override
@@ -205,11 +229,15 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
 
             }
         });
+        reloadSentSurveys(surveys);
+        initiatingFilters =false;
     }
 
     private void initOrgUnitFilters(){
+        initiatingFilters=true;
         filterSpinnerOrgUnit = (Spinner) getActivity().findViewById(R.id.filter_orgunit);
-
+        if(filterSpinnerOrgUnit == null)
+            return;
         //orgUnitList.add(0, new OrgUnit(getActivity().getString(R.string.filter_all_org_units).toUpperCase()));
         filterSpinnerOrgUnit.setAdapter(new FilterOrgUnitArrayAdapter(getActivity().getApplicationContext(), orgUnitList));
         if(orgUnitFilter==null)
@@ -232,8 +260,8 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
                         reload = true;
                     }
                 }
-                if (reload)
-                    reloadSentSurveys();
+                if (reload && !initiatingFilters)
+                    reloadSentSurveys(surveys);
             }
 
             @Override
@@ -241,12 +269,14 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
 
             }
         });
+        reloadSentSurveys(surveys);
+        initiatingFilters =false;
     }
-    
+
     private void initFilters() {
         initProgramFilters();
         initOrgUnitFilters();
-        reloadSentSurveys();
+        reloadSentSurveys(surveys);
     }
 
     /**
@@ -268,19 +298,19 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
     public void setScoreOrder()
     {
         orderBy=SCORE_ORDER;
-        reloadSentSurveys();
+        reloadSentSurveys(surveys);
     }
 
     public void setFacilityOrder()
     {
         orderBy=FACILITY_ORDER;
-        reloadSentSurveys();
+        reloadSentSurveys(surveys);
     }
 
     public void setDateOrder()
     {
         orderBy=DATE_ORDER;
-        reloadSentSurveys();
+        reloadSentSurveys(surveys);
     }
     @Override
     public void onListItemClick(ListView l, View v, int position, long id){
@@ -293,7 +323,7 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
         }
 
         // call feedbackselected function(and it call surveyfragment)
-        dashboardActivity.onFeedbackSelected(surveys.get(position - 1));
+        dashboardActivity.onFeedbackSelected(oneSurveyForOrgUnit.get(position - 1));
     }
 
     @Override
@@ -444,8 +474,7 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
 
         if (surveyReceiver == null) {
             surveyReceiver = new SurveyReceiver();
-            LocalBroadcastManager.getInstance(PreferencesState.getInstance().getContext()).registerReceiver(surveyReceiver, new IntentFilter(SurveyService.ALL_SENT_OR_COMPLETED_OR_CONFLICT_SURVEYS_ACTION));
-            LocalBroadcastManager.getInstance(PreferencesState.getInstance().getContext()).registerReceiver(surveyReceiver, new IntentFilter(SurveyService.ALL_ORG_UNITS_AND_PROGRAMS_ACTION));
+            LocalBroadcastManager.getInstance(PreferencesState.getInstance().getContext()).registerReceiver(surveyReceiver, new IntentFilter(SurveyService.RELOAD_SENT_FRAGMENT_ACTION));
         }
     }
 
@@ -461,10 +490,16 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
         }
     }
 
-    public void reloadSurveys(List<Survey> newListSurveys) {
-        Log.d(TAG, "reloadSurveys (Thread: " + Thread.currentThread().getId() + "): " + newListSurveys.size());
+    public void refreshScreen(List<Survey> newListSurveys) {
+        Log.d(TAG, "refreshScreen (Thread: " + Thread.currentThread().getId() + "): " + newListSurveys.size());
         this.surveys.clear();
         this.surveys.addAll(newListSurveys);
+        adapter.setItems(newListSurveys);
+        this.adapter.notifyDataSetChanged();
+    }
+
+    public void reloadSurveys(List<Survey> newListSurveys) {
+        Log.d(TAG, "reloadSurveys (Thread: " + Thread.currentThread().getId() + "): " + newListSurveys.size());
         adapter.setItems(newListSurveys);
         this.adapter.notifyDataSetChanged();
         if(isAdded())
@@ -478,46 +513,42 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
     public void reloadData(){
         //Reload data using service
         Intent surveysIntent=new Intent(PreferencesState.getInstance().getContext().getApplicationContext(), SurveyService.class);
-        surveysIntent.putExtra(SurveyService.SERVICE_METHOD, SurveyService.ALL_SENT_OR_COMPLETED_OR_CONFLICT_SURVEYS_ACTION);
-        surveysIntent.putExtra(SurveyService.SERVICE_METHOD, SurveyService.ALL_ORG_UNITS_AND_PROGRAMS_ACTION);
+        surveysIntent.putExtra(SurveyService.SERVICE_METHOD, SurveyService.RELOAD_SENT_FRAGMENT_ACTION);
         PreferencesState.getInstance().getContext().getApplicationContext().startService(surveysIntent);
     }
 
     /**
      * filter the surveys for last survey in org unit, and set surveysForGraphic for the statistics
      */
-    public void reloadSentSurveys() {
-        List<Survey> surveys = (List<Survey>) Session.popServiceValue(SurveyService.ALL_SENT_OR_COMPLETED_OR_CONFLICT_SURVEYS_ACTION);
-
+    public void reloadSentSurveys(List<Survey> surveys) {
         // To prevent from reloading too fast, before service has finished its job
         if (surveys == null) return;
 
         HashMap<String, Survey> orgUnits;
         orgUnits = new HashMap<>();
+        ProgramOUSurveyDict programOUSurveyDict = new ProgramOUSurveyDict();
         oneSurveyForOrgUnit = new ArrayList<>();
         if(PreferencesState.getInstance().isLastForOrgUnit()) {
             for (Survey survey : surveys) {
                 if (survey.getOrgUnit() != null && survey.getProgram() != null) {
-                    if (!orgUnits.containsKey(survey.getProgram().getName() + survey.getOrgUnit().getUid())) {
-                        filterSurvey(orgUnits, survey);
+                    if (!programOUSurveyDict.containsKey(survey.getProgram().getUid(), survey.getOrgUnit().getUid())) {
+                        AddSurveyIfNotfiltered(programOUSurveyDict, survey);
                     } else {
-                        Survey surveyMapped = orgUnits.get(survey.getProgram().getName() + survey.getOrgUnit().getUid());
+                        Survey surveyMapped = programOUSurveyDict.get(survey.getProgram().getUid(), survey.getOrgUnit().getUid());
                         Log.d(TAG, "reloadSentSurveys check NPE \tsurveyMapped:" + surveyMapped + "\tsurvey:" + survey);
                         if ((surveyMapped.getCompletionDate() != null && survey.getCompletionDate() != null) && surveyMapped.getCompletionDate().before(survey.getCompletionDate())) {
-                            orgUnits = filterSurvey(orgUnits, survey);
+                            programOUSurveyDict = AddSurveyIfNotfiltered(programOUSurveyDict, survey);
                         }
                     }
                 }
             }
-            for (Survey survey : orgUnits.values()) {
-                oneSurveyForOrgUnit.add(survey);
-            }
-        }
-        else if(PreferencesState.getInstance().isNoneFilter()){
+            oneSurveyForOrgUnit = programOUSurveyDict.values();
+        }else if(PreferencesState.getInstance().isNoneFilter()){
             for (Survey survey : surveys) {
                 oneSurveyForOrgUnit.add(survey);
             }
         }
+
         //Order the surveys, and reverse if is needed, taking the last order from LAST_ORDER
         if (orderBy != WITHOUT_ORDER) {
             reverse=false;
@@ -557,28 +588,35 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
         else{
             LAST_ORDER=orderBy;
         }
-        reloadSurveys(oneSurveyForOrgUnit);
+        refreshScreen(oneSurveyForOrgUnit);
     }
 
-    public void getOrgUnitAndPrograms(){
-        HashMap<String,List> data=(HashMap) Session.popServiceValue(SurveyService.ALL_ORG_UNITS_AND_PROGRAMS_ACTION);
-
-        orgUnitList=data.get(SurveyService.PREPARE_ORG_UNIT);
-        programList=data.get(SurveyService.PREPARE_PROGRAMS);
+    /**
+     * This method add a survey to the program/OU/survey map only in case it's not filtered by the
+     * selected filters and the survey is older than any previous existing in the map
+     * @param programOUSurveyDict
+     * @param survey
+     * @return
+     */
+    private ProgramOUSurveyDict AddSurveyIfNotfiltered(ProgramOUSurveyDict programOUSurveyDict, Survey survey) {
+        if(isNotFilteredByOU(survey) && isNotFilteredByProgram(survey)) {
+            Survey previousSurvey = programOUSurveyDict.get(survey.getProgram().getUid(), survey.getOrgUnit().getUid());
+            if (previousSurvey==null || previousSurvey.getCompletionDate().compareTo(survey.getCompletionDate()) < 0)
+                programOUSurveyDict.put(survey.getProgram().getUid(), survey.getOrgUnit().getUid(), survey);
+        }
+        return programOUSurveyDict;
     }
 
-    private HashMap<String, Survey> filterSurvey(HashMap<String, Survey> orgUnits, Survey survey) {
+    private boolean isNotFilteredByOU(Survey survey){
         if(orgUnitFilter!=null && (orgUnitFilter.equals(PreferencesState.getInstance().getContext().getString(R.string.filter_all_org_units).toUpperCase()) || orgUnitFilter.equals(survey.getOrgUnit().getUid())))
-            if(programFilter.equals(PreferencesState.getInstance().getContext().getString(R.string.filter_all_org_assessments).toUpperCase()) || programFilter.equals(survey.getProgram().getName()))
-              orgUnits.put(survey.getProgram().getName()+survey.getOrgUnit().getUid(), survey);
-        return orgUnits;
+            return true;
+        return false;
     }
 
-    public void showContainer(){
-        getActivity().findViewById(R.id.dashboard_completed_container).setVisibility(View.VISIBLE);
-    }
-    public void hideContainer(){
-        getActivity().findViewById(R.id.dashboard_completed_container).setVisibility(View.GONE);
+    private boolean isNotFilteredByProgram(Survey survey){
+        if(programFilter.equals(PreferencesState.getInstance().getContext().getString(R.string.filter_all_org_assessments).toUpperCase()) || programFilter.equals(survey.getProgram().getUid()))
+            return true;
+        return false;
     }
 
     /**
@@ -592,42 +630,16 @@ public class DashboardSentFragment extends ListFragment implements IModuleFragme
         public void onReceive(Context context, Intent intent) {
             Log.d(TAG, "onReceive");
             //Listening only intents from this method
-            if (SurveyService.ALL_SENT_OR_COMPLETED_OR_CONFLICT_SURVEYS_ACTION.equals(intent.getAction())) {
-                reloadSentSurveys();
+            if (SurveyService.RELOAD_SENT_FRAGMENT_ACTION.equals(intent.getAction())) {
+                BaseServiceBundle sentDashboardBundle = (BaseServiceBundle) Session.popServiceValue(SurveyService.RELOAD_SENT_FRAGMENT_ACTION);
+                orgUnitList = (List<OrgUnit>) sentDashboardBundle.getModelList(OrgUnit.class.getName());
+                programList = (List<Program>) sentDashboardBundle.getModelList(Program.class.getName());
+                surveys = (List<Survey>) sentDashboardBundle.getModelList(Survey.class.getName());
+                reloadSentSurveys(surveys);
+                if(!PreferencesState.getInstance().isNoneFilter()) {
+                    initFilters();
+                }
             }
-            if(SurveyService.ALL_ORG_UNITS_AND_PROGRAMS_ACTION.equals(intent.getAction())){
-                getOrgUnitAndPrograms();
-                new showContainer().execute();
-            }
-        }
-    }
-
-    private class showContainer extends AsyncTask<Void, Void, Void> {
-        @Override
-        protected Void doInBackground(Void... params) {
-            //sleep for wait the ontab change
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            return null;
-        }
-
-        @Override
-        protected void onPostExecute(Void result) {
-            if(!PreferencesState.getInstance().isVerticalDashboard()){
-                initFilters();
-                showContainer();
-            } 
-        }
-
-        @Override
-        protected void onPreExecute() {
-        }
-
-        @Override
-        protected void onProgressUpdate(Void... values) {
         }
     }
 }

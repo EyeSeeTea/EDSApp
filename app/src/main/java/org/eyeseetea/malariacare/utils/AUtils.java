@@ -19,6 +19,7 @@
 
 package org.eyeseetea.malariacare.utils;
 
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.net.ConnectivityManager;
@@ -27,10 +28,10 @@ import android.text.Html;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.util.Linkify;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
-import android.widget.ImageView;
 import android.widget.TextView;
 
 import com.raizlabs.android.dbflow.structure.BaseModel;
@@ -57,7 +58,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 
-public class AUtils {
+public abstract class AUtils {
 
     private static final int ZERO_DECIMALS = 0; // Number of decimals outputs will have
 
@@ -66,6 +67,15 @@ public class AUtils {
         bd = bd.setScale(decimalPlace, BigDecimal.ROUND_HALF_UP);
         if (decimalPlace == 0) return Integer.toString((int) bd.floatValue());
         return Float.toString(bd.floatValue());
+    }
+
+    public static float safeParseFloat(String floatStr){
+        try {
+            return Float.parseFloat(floatStr);
+        }catch (NumberFormatException nfe){
+            Log.d("AUtils", String.format("Error when parsing string %s to float number", floatStr));
+            return 0f;
+        }
     }
 
     public static String round(float base){
@@ -151,6 +161,7 @@ public class AUtils {
                 stringBuilder.append(line + "\n");
             }
         } catch (IOException e) {
+            Log.d("AUtils", String.format("Error reading inputStream [%s]", inputStream));
             e.printStackTrace();
         }
 
@@ -259,6 +270,15 @@ public class AUtils {
         }
         stringMessage=String.format(stringMessage,stringCommit);
         return stringMessage;
+    }
+
+    public static void showAlert(int titleId, CharSequence text, Context context){
+        final AlertDialog dialog = new AlertDialog.Builder(context)
+                .setTitle(context.getString(titleId))
+                .setMessage(text)
+                .setNeutralButton(android.R.string.ok, null).create();
+        dialog.show();
+        ((TextView)dialog.findViewById(android.R.id.message)).setMovementMethod(LinkMovementMethod.getInstance());
     }
 
     public static void showAlertWithLogoAndVersion(int titleId, CharSequence text, Context context){

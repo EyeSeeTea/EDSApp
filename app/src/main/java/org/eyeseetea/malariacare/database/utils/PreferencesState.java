@@ -22,11 +22,13 @@ package org.eyeseetea.malariacare.database.utils;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
+import android.util.DisplayMetrics;
 import android.util.Log;
 
 import org.eyeseetea.malariacare.DashboardActivity;
 import org.eyeseetea.malariacare.ProgressActivity;
 import org.eyeseetea.malariacare.R;
+import org.eyeseetea.malariacare.utils.Constants;
 import org.eyeseetea.malariacare.layout.dashboard.builder.AppSettingsBuilder;
 import org.eyeseetea.malariacare.layout.dashboard.config.DashboardAdapter;
 import org.eyeseetea.malariacare.layout.dashboard.config.DashboardListFilter;
@@ -63,6 +65,11 @@ public class PreferencesState {
      * Flag that determines if data must be pulled from server
      */
     private Boolean pullFromServer;
+
+    /**
+     * Flag that determines if large text is show in preferences
+     */
+    private Boolean showLargeText;
 
     /**
      * Flag that determines if the planning tab must be hide or not
@@ -104,7 +111,7 @@ public class PreferencesState {
         locationRequired=initLocationRequired();
         hidePlanningTab = initHidePlanningTab();
         maxEvents=initMaxEvents();
-        Log.d(TAG,String.format("reloadPreferences: scale: %s | showNumDen: %b | locationRequired: %b | maxEvents: %d",scale,showNumDen,locationRequired,maxEvents));
+        Log.d(TAG,String.format("reloadPreferences: scale: %s | showNumDen: %b | locationRequired: %b | maxEvents: %d | largeTextOption: %b ",scale,showNumDen,locationRequired,maxEvents,showLargeText));
     }
 
     /**
@@ -146,7 +153,14 @@ public class PreferencesState {
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(instance.getContext());
         return sharedPreferences.getBoolean(instance.getContext().getString(R.string.hide_planning_tab_key), false);
     }
-
+    /**
+     * Inits hidePlanningTab flag according to preferences
+     * @return
+     */
+    public boolean isDevelopOptionActive(){
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(instance.getContext());
+        return sharedPreferences.getBoolean(instance.getContext().getString(R.string.developer_option), false);
+    }
     /**
      * Inits maxEvents settings
      * @return
@@ -227,7 +241,15 @@ public class PreferencesState {
         return showNumDen;
     }
 
+    public void setShowNumDen(boolean value){
+        this.showNumDen=value;
+    }
+
     public boolean isLocationRequired(){return locationRequired;}
+
+    public void setLocationRequired(boolean value){
+        this.locationRequired=value;
+    }
 
     public boolean isHidePlanningTab(){
         return this.hidePlanningTab;
@@ -237,7 +259,12 @@ public class PreferencesState {
         return this.maxEvents;
     }
 
+    public void setMaxEvents(int maxEvents){
+        this.maxEvents=maxEvents;
+    }
+
     public Float getFontSize(String scale,String dimension){
+        if (scaleDimensionsMap.get(scale)==null) return context.getResources().getDimension(R.dimen.small_large_text_size);
         return scaleDimensionsMap.get(scale).get(dimension);
     }
 
@@ -302,6 +329,38 @@ public class PreferencesState {
         SharedPreferences.Editor editor =sharedPreferences.edit();
         editor.putString(context.getResources().getString(R.string.default_orgUnits), "");
         editor.putString(context.getResources().getString(R.string.default_orgUnit), "");
+        editor.commit();
+    }
+
+    /**
+     * it determines if large text is shown in preferences
+     * The screen size should be more bigger than the width and height constants to show the large text option.
+     */
+    public boolean isLargeTextShown(){
+        if(showLargeText==null) {
+            DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+            Log.d(TAG,metrics.widthPixels +" x "+ metrics.heightPixels);
+            if (metrics.widthPixels > Constants.MINIMAL_WIDTH_PIXEL_RESOLUTION_TO_SHOW_LARGE_TEXT && metrics.heightPixels >= Constants.MINIMAL_HEIGHT_PIXEL_RESOLUTION_TO_SHOW_LARGE_TEXT) {
+                showLargeText= true;
+            } else {
+                showLargeText = false;
+            }
+        }
+        return  showLargeText;
+    }
+
+    public boolean isPushInProgress() {
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(
+                instance.getContext());
+        return sharedPreferences.getBoolean(
+                instance.getContext().getString(R.string.push_in_progress), false);
+    }
+
+    public void setPushInProgress(boolean inProgress) {
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(
+                context);
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putBoolean(context.getResources().getString(R.string.push_in_progress), inProgress);
         editor.commit();
     }
 }

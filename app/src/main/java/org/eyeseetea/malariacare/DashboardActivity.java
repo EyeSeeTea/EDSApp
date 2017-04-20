@@ -19,17 +19,19 @@
 
 package org.eyeseetea.malariacare;
 
-import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Toast;
 
 import com.squareup.otto.Subscribe;
 
@@ -39,13 +41,17 @@ import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.model.User;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
-import org.eyeseetea.malariacare.database.utils.SurveyAnsweredRatio;
+import org.eyeseetea.malariacare.database.utils.metadata.PhoneMetaData;
 import org.eyeseetea.malariacare.database.utils.planning.SurveyPlanner;
+import org.eyeseetea.malariacare.drive.DriveRestControllerStrategy;
 import org.eyeseetea.malariacare.layout.dashboard.builder.AppSettingsBuilder;
 import org.eyeseetea.malariacare.layout.dashboard.controllers.DashboardController;
+import org.eyeseetea.malariacare.layout.dashboard.controllers.PlanModuleController;
 import org.eyeseetea.malariacare.receivers.AlarmPushReceiver;
 import org.eyeseetea.malariacare.services.SurveyService;
+import org.eyeseetea.malariacare.utils.Constants;
 import org.hisp.dhis.android.sdk.events.UiEvent;
+
 import java.util.List;
 
 
@@ -53,7 +59,7 @@ public class DashboardActivity extends BaseActivity{
 
     private final static String TAG=".DDetailsActivity";
     private boolean reloadOnResume=true;
-    DashboardController dashboardController;
+    public DashboardController dashboardController;
     static Handler handler;
     public static DashboardActivity dashboardActivity;
 
@@ -67,6 +73,7 @@ public class DashboardActivity extends BaseActivity{
         //XXX to remove?
         initDataIfRequired();
 
+        loadPhoneMetadata();
         //get dashboardcontroller from settings.json
         dashboardController = AppSettingsBuilder.getInstance().getDashboardController();
 
@@ -78,12 +85,31 @@ public class DashboardActivity extends BaseActivity{
 
         //inits autopush alarm
         AlarmPushReceiver.getInstance().setPushAlarm(this);
+
+        //Media: init drive credentials
+        DriveRestControllerStrategy.getInstance().init(this);
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.menu_dashboard, menu);
         return true;
+    }
+
+
+
+
+    /**
+     * Handles resolution callbacks.
+     */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode,
+                                    Intent data) {
+        Log.d(TAG, String.format("onActivityResult(%d, %d)", requestCode, resultCode));
+        super.onActivityResult(requestCode, resultCode, data);
+
+        //Delegate activity result to media controller
+        DriveRestControllerStrategy.getInstance().onActivityResult(requestCode, resultCode, data);
     }
 
     @Override
@@ -98,46 +124,31 @@ public class DashboardActivity extends BaseActivity{
         }
 
         //Pull
-        final List<Survey> unsentSurveys = Survey.getAllUnsentUnplannedSurveys();
+        final int unsentSurveysCount = Survey.getAllUnsentUnplannedSurveys();
 
         //No unsent data -> pull (no confirmation)
-        if(unsentSurveys==null || unsentSurveys.size()==0){
-            pullMetadata();
-            return true;
+        String message = getApplicationContext().getResources().getString(
+                R.string.dialog_action_refresh);
+        if (unsentSurveysCount > 0) {
+            message += String.format(getApplicationContext().getResources().getString(
+                    R.string.dialog_incomplete_surveys_before_refresh),
+                    unsentSurveysCount);
+        } else {
+            message += getApplicationContext().getResources().getString(
+                    R.string.dialog_all_surveys_sent_before_refresh);
         }
-
-        final Activity activity = this;
         //check if exist a compulsory question without awnser before push and pull.
-        for(Survey survey:unsentSurveys){
-            SurveyAnsweredRatio surveyAnsweredRatio = survey.reloadSurveyAnsweredRatio();
-            if (surveyAnsweredRatio.getTotalCompulsory()>0 && surveyAnsweredRatio.getCompulsoryAnswered() != surveyAnsweredRatio.getTotalCompulsory() ) {
-                new AlertDialog.Builder(this)
-                        .setTitle("Unsent surveys")
-                        .setMessage(getApplicationContext().getResources().getString(R.string.dialog_incompleted_compulsory_pulling))
-                        .setPositiveButton(android.R.string.ok, null)
-                        .setCancelable(true)
-                        .create().show();
-                return true;
-            }
-        }
-        //Unsent data -> ask if pull || push before pulling
+
         new AlertDialog.Builder(this)
-                .setTitle("Push unsent surveys?")
-                .setMessage(String.format(getResources().getString(R.string.dialog_sent_survey_on_refresh_metadata), unsentSurveys.size() + ""))
-                .setNeutralButton(android.R.string.no, null)
-                .setNegativeButton(activity.getString(R.string.no), new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        //Pull directly
+                .setTitle(getApplicationContext().getResources().getString(
+                        R.string.settings_menu_pull))
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface arg0, int arg1) {
                         pullMetadata();
                     }
                 })
-                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface arg0, int arg1) {
-                        //Try to push before pull
-                        pushUnsentBeforePull();
-                    }
-                })
+                .setNegativeButton(android.R.string.no, null)
                 .setCancelable(true)
                 .create().show();
         return true;
@@ -145,6 +156,11 @@ public class DashboardActivity extends BaseActivity{
 
     private void pushUnsentBeforePull() {
 
+        if (PreferencesState.getInstance().isPushInProgress()) {
+            Toast.makeText(getBaseContext(), R.string.toast_push_in_progress,
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         //Launch Progress Push before pull
         Intent progressActivityIntent = new Intent(this, ProgressActivity.class);
         progressActivityIntent.putExtra(ProgressActivity.TYPE_OF_ACTION, ProgressActivity.ACTION_PUSH_BEFORE_PULL);
@@ -173,6 +189,7 @@ public class DashboardActivity extends BaseActivity{
         Log.d(TAG, "onResume");
         super.onResume();
         getSurveysFromService();
+        DriveRestControllerStrategy.getInstance().syncMedia();
     }
 
     @Override
@@ -212,9 +229,8 @@ public class DashboardActivity extends BaseActivity{
     /**
      * PUll data from DHIS server and turn into our model
      */
-    private void initDataIfRequired(){
-//            PullController.getInstance().pull(this);
-            initUserSessionIfRequired();
+    private void initDataIfRequired() {
+        initUserSessionIfRequired();
     }
 
     /**
@@ -253,6 +269,20 @@ public class DashboardActivity extends BaseActivity{
     }
 
     /**
+     * Handler that starts or edits a given survey
+     * @param orgUnit
+     */
+    public void onOrgUnitSelected(OrgUnit orgUnit){
+        dashboardController.onOrgUnitSelected(orgUnit);
+    }
+    /**
+     * Handler that starts or edits a given survey
+     * @param program
+     */
+    public void onProgramSelected(Program program){
+        dashboardController.onProgramSelected(program);
+    }
+    /**
      * Handler that marks the given sucloseFeedbackFragmentrvey as completed.
      * This includes a pair or corner cases
      * @param survey
@@ -290,7 +320,32 @@ public class DashboardActivity extends BaseActivity{
     public void createNewSurvey(OrgUnit orgUnit, Program program){
         Survey survey=SurveyPlanner.getInstance().startSurvey(orgUnit,program);
         prepareLocationListener(survey);
+        // Put new survey in session
+        Session.setSurveyByModule(survey, Constants.FRAGMENT_SURVEY_KEY);
         dashboardController.onSurveySelected(survey);
+    }
+
+    /**
+     * Shows a quick toast message on screen
+     * @param message
+     */
+
+    public static void toast(String message) {
+        Toast.makeText(DashboardActivity.dashboardActivity, message, Toast.LENGTH_LONG).show();
+    }
+
+    public static void toastFromTask(final String message) {
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                new Handler(Looper.getMainLooper()).post(new Runnable() {
+                    @Override
+                    public void run() {
+                        toast(message);
+                    }
+                });
+            }
+        },1000);
     }
 
     //Show dialog exception from class without activity.
@@ -317,5 +372,30 @@ public class DashboardActivity extends BaseActivity{
                 });
             }
         }, 1000);
+    }
+
+    public void preparePlanningFilters(List<Program> programList, List<OrgUnit> orgUnitList) {
+        ((PlanModuleController)dashboardController.getModuleByName(PlanModuleController.getSimpleName())).prepareFilters(programList,orgUnitList);
+    }
+
+    @Override
+    public void clickOrgUnitSpinner(View v){
+        PlanModuleController planModuleController = (PlanModuleController)dashboardController.getModuleByName(PlanModuleController.getSimpleName());
+        planModuleController.clickOrgUnitSpinner();
+    }
+    @Override
+    public void clickProgramSpinner(View v){
+        PlanModuleController planModuleController = (PlanModuleController)dashboardController.getModuleByName(PlanModuleController.getSimpleName());
+        planModuleController.clickOrgProgramSpinner();
+    }
+
+    public void loadPhoneMetadata() {
+        Session.setPhoneMetaData(
+                new PhoneMetaData((TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE)));
+    }
+    public void reloadSentData() {
+        Intent surveysIntent=new Intent(this, SurveyService.class);
+        surveysIntent.putExtra(SurveyService.SERVICE_METHOD, SurveyService.RELOAD_SENT_FRAGMENT_ACTION);
+        this.startService(surveysIntent);
     }
 }

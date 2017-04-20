@@ -47,6 +47,7 @@ import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
+import org.eyeseetea.malariacare.database.utils.SurveyAnsweredRatio;
 import org.eyeseetea.malariacare.database.utils.planning.SurveyPlanner;
 import org.eyeseetea.malariacare.layout.adapters.dashboard.AssessmentUnsentAdapter;
 import org.eyeseetea.malariacare.layout.adapters.dashboard.IDashboardAdapter;
@@ -181,7 +182,7 @@ public class DashboardUnsentFragment extends ListFragment implements IModuleFrag
                         .setMessage(String.format(getActivity().getString(R.string.dialog_info_delete_survey), survey.getProgram().getName()))
                         .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
                             public void onClick(DialogInterface arg0, int arg1) {
-                                //this method create a new survey geting the getScheduleDate date of the oldsurvey, and remove it.
+                                //this method create a new survey geting the getScheduledDate date of the oldsurvey, and remove it.
                                 SurveyPlanner.getInstance().deleteSurveyAndBuildNext(survey);
                                 removeSurveyFromAdapter(survey);
                             }
@@ -212,6 +213,7 @@ public class DashboardUnsentFragment extends ListFragment implements IModuleFrag
         //Reload data using service
         Intent surveysIntent=new Intent(getActivity(), SurveyService.class);
         surveysIntent.putExtra(SurveyService.SERVICE_METHOD, SurveyService.ALL_COMPLETED_SURVEYS_ACTION);
+        surveysIntent.putExtra(SurveyService.SERVICE_METHOD, SurveyService.RELOAD_SENT_FRAGMENT_ACTION);
         getActivity().startService(surveysIntent);
     }
 
@@ -283,14 +285,13 @@ public class DashboardUnsentFragment extends ListFragment implements IModuleFrag
         if(surveyReceiver==null){
             surveyReceiver=new SurveyReceiver();
             LocalBroadcastManager.getInstance(getActivity()).registerReceiver(surveyReceiver, new IntentFilter(SurveyService.ALL_IN_PROGRESS_SURVEYS_ACTION));
-            LocalBroadcastManager.getInstance(getActivity()).registerReceiver(surveyReceiver, new IntentFilter(SurveyService.ALL_COMPLETED_SURVEYS_ACTION));
         }
     }
 
     public void manageSurveysAlarm(List<Survey> newListSurveys){
         Log.d(TAG, "setSurveysAlarm (Thread: " + Thread.currentThread().getId() + "): " + newListSurveys.size());
         //Fixme think other way to cancel the setPushAlarm in Malariaapp
-
+        AlarmPushReceiver.getInstance().setPushAlarm(getActivity());
     }
 
     /**
@@ -323,7 +324,7 @@ public class DashboardUnsentFragment extends ListFragment implements IModuleFrag
 
     public void reloadSurveys(List<Survey> newListSurveys){
         if(newListSurveys!=null) {
-            Log.d(TAG, "reloadSurveys (Thread: " + Thread.currentThread().getId() + "): " + newListSurveys.size());
+            Log.d(TAG, "refreshScreen (Thread: " + Thread.currentThread().getId() + "): " + newListSurveys.size());
             this.surveys.clear();
             this.surveys.addAll(newListSurveys);
             this.adapter.notifyDataSetChanged();
