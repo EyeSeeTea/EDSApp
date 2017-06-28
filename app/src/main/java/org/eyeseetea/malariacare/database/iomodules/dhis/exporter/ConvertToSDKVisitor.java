@@ -23,11 +23,15 @@ import android.content.Context;
 import android.location.Location;
 import android.util.Log;
 
+import com.raizlabs.android.dbflow.sql.builder.Condition;
+import com.raizlabs.android.dbflow.sql.language.Select;
+
 import org.eyeseetea.malariacare.DashboardActivity;
 import org.eyeseetea.malariacare.R;
 import org.eyeseetea.malariacare.database.iomodules.dhis.importer.models.DataValueExtended;
 import org.eyeseetea.malariacare.database.iomodules.dhis.importer.models.EventExtended;
 import org.eyeseetea.malariacare.database.model.CompositeScore;
+import org.eyeseetea.malariacare.database.model.OrgUnitProgramRelation;
 import org.eyeseetea.malariacare.database.model.ServerMetadata;
 import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.model.User;
@@ -35,15 +39,17 @@ import org.eyeseetea.malariacare.database.model.Value;
 import org.eyeseetea.malariacare.database.utils.LocationMemory;
 import org.eyeseetea.malariacare.database.utils.PreferencesState;
 import org.eyeseetea.malariacare.database.utils.Session;
+import org.eyeseetea.malariacare.database.utils.planning.SurveyPlanner;
+import org.eyeseetea.malariacare.utils.DateQuestionFormatter;
 import org.eyeseetea.malariacare.layout.score.ScoreRegister;
 import org.eyeseetea.malariacare.network.PullClient;
-import org.eyeseetea.malariacare.layout.score.ScoreUtils;
-import org.eyeseetea.malariacare.utils.Constants;
 import org.eyeseetea.malariacare.utils.AUtils;
+import org.eyeseetea.malariacare.utils.Constants;
 import org.hisp.dhis.android.sdk.controllers.tracker.TrackerController;
 import org.hisp.dhis.android.sdk.persistence.models.DataValue;
 import org.hisp.dhis.android.sdk.persistence.models.Event;
 import org.hisp.dhis.android.sdk.persistence.models.FailedItem;
+import org.hisp.dhis.android.sdk.persistence.models.FailedItem$Table;
 import org.hisp.dhis.android.sdk.persistence.models.ImportSummary;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -67,13 +73,20 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
      */
     Context context;
 
+    String overallScoreCode;
+    String mainScoreClassCode;
+    String mainScoreACode;
+    String mainScoreBCode;
+    String mainScoreCCode;
     String forwardOrderCode;
+    String pushDeviceCode;
+    String overallProductivityCode;
+    String nextAssessmentCode;
 
     String createdOnCode;
     String updatedDateCode;
     String updatedUserCode;
-    String overallScoreCode;
-    String pushDeviceCode;
+
     /**
      * List of surveys that are going to be pushed
      */
@@ -113,14 +126,20 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
 
     ConvertToSDKVisitor(Context context){
         this.context=context;
-        // FIXME: We should create a visitor to translate the ServerMetadata class
-
+        // FIXME: We should create a visitor to translate the ControlDataElement class
         overallScoreCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.overall_score_code));
+        mainScoreClassCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.main_score_class_code));
+        mainScoreACode = ServerMetadata.findControlDataElementUid(context.getString(R.string.main_score_a_code));
+        mainScoreBCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.main_score_b_code));
+        mainScoreCCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.main_score_c_code));
         forwardOrderCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.forward_order_code));
-        createdOnCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.created_on_code));
-        updatedDateCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.upload_on_code));
-        updatedUserCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.uploaded_by_code));
         pushDeviceCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.push_device_code));
+        overallProductivityCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.overall_productivity_code));
+        nextAssessmentCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.next_assessment_code));
+
+        createdOnCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.created_on_code));
+        updatedDateCode =ServerMetadata.findControlDataElementUid(context.getString(R.string.upload_date_code));
+        updatedUserCode = ServerMetadata.findControlDataElementUid(context.getString(R.string.uploaded_by_code));
         surveys = new ArrayList<>();
         events = new HashMap<>();
         originalSurveysUIDs = new HashMap<>();
@@ -131,6 +150,9 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
 
         uploadedDate =new Date();
 
+        survey.setUploadDate(uploadedDate);
+        survey.save();
+
         //Turn survey into an event
         this.currentSurvey=survey;
 
@@ -138,39 +160,106 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         Log.d(TAG,String.format("Creating event for survey (%s) ...", survey.toString()));
 
 
-        this.currentEvent=buildEvent();
-        Log.d(TAG,currentEvent.toString());
-
-        //Calculates scores and update survey
-        Log.d(TAG,"Registering scores...");
-        List<CompositeScore> compositeScores = ScoreRegister.loadCompositeScores(survey, Constants.PUSH_MODULE_KEY);
-        updateSurvey(compositeScores, currentSurvey.getId_survey(), Constants.PUSH_MODULE_KEY);
-
-        //Turn score values into dataValues
-        Log.d(TAG, "Creating datavalues from scores...");
-        for(CompositeScore compositeScore:compositeScores){
-            compositeScore.accept(this);
+        String errorMessage = "Exception creating a new event from survey. Removing survey from DB";
+        try {
+            this.currentEvent = buildEvent();
+        } catch (Exception e) {
+            showErrorConversionMessage(errorMessage);
+            currentSurvey.delete();//invalid survey
+            return;
         }
+        try {
+            currentSurvey.setEventUid(currentEvent.getUid());
+            currentSurvey.save();
 
-        //Turn question values into dataValues
-        Log.d(TAG, "Creating datavalues from questions... Values"+survey.getValues().size());
-        for(Value value:currentSurvey.getValues()) {
-            //in a modification an old value is skipped
-            if(isAModification && value.getUploadDate().before(currentSurvey.getUploadDate())){
-                continue;
+            //Calculates scores and update survey
+            Log.d(TAG, "Registering scores...");
+            errorMessage = "Calculating compositeScores";
+            List<CompositeScore> compositeScores = ScoreRegister.loadCompositeScores(survey,
+                    Constants.PUSH_MODULE_KEY);
+            updateSurvey(compositeScores, currentSurvey.getId_survey(), Constants.PUSH_MODULE_KEY);
+
+            //Turn score values into dataValues
+            Log.d(TAG, "Creating datavalues from scores...");
+            errorMessage = "compositeScores visitors";
+            for (CompositeScore compositeScore : compositeScores) {
+                compositeScore.accept(this);
             }
-            //value -> datavalue
-            value.accept(this);
+
+            errorMessage = "datavalue visitors ";
+            //Turn question values into dataValues
+            Log.d(TAG, "Creating datavalues from questions... Values" + survey.getValues().size());
+            for (Value value : currentSurvey.getValues()) {
+                //in a modification an old value is skipped
+                if (isAModification && value.getUploadDate().before(
+                        currentSurvey.getUploadDate())) {
+                    continue;
+                }
+                //value -> datavalue
+                value.accept(this);
+            }
+
+
+            errorMessage = "updating dates";
+            survey.setUploadDate(uploadedDate);
+
+            //Update all the dates after checks the new values
+            updateEventDates();
+
+            Log.d(TAG, "Creating datavalues from other stuff...");
+            errorMessage = "building dataElements";
+            buildControlDataElements(survey);
+
+            errorMessage = "annotating surveys and events";
+            //Annotate both objects to update its state once the process is over
+            annotateSurveyAndEvent();
+        }catch (Exception e){
+            e.printStackTrace();
+            showErrorConversionMessage(errorMessage);
+            removeSurveyAndEvent(survey);
+            return;
         }
+    }
 
-        //Update all the dates after checks the new values
-        updateEventDates();
+    private void showErrorConversionMessage(String errorMessage) {
+        String programName = "", orgUnitName = "";
+        if (currentSurvey.getProgram() != null
+                && currentSurvey.getProgram().getName() != null) {
+            programName = currentSurvey.getProgram().getName();
+        }
+        if (currentSurvey.getOrgUnit() != null
+                && currentSurvey.getOrgUnit().getName() != null) {
+            orgUnitName = currentSurvey.getOrgUnit().getName();
+        }
+        Log.d(TAG, "Error: " + errorMessage + " surveyId: " + currentSurvey.getId_survey()
+                + "program: " + programName + " OrgUnit: "
+                + orgUnitName + "Survey: " + currentSurvey.toString());
+        if (currentSurvey.getValues() != null) {
+            for (Value value : currentSurvey.getValues()) {
+                Log.d(TAG, "DataValues:" + value.toString());
+            }
+        }
+        try {
+            DashboardActivity.showException(context.getString(R.string.error_message),
+                    "Error: " + errorMessage + " surveyId: " + currentSurvey.getId_survey()
+                            + "program: " + programName + " OrgUnit: "
+                            + orgUnitName + "Survey: " + currentSurvey.toString());
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+    }
 
-        Log.d(TAG, "Creating datavalues from other stuff...");
-        buildControlDataElements(survey);
-
-        //Annotate both objects to update its state once the process is over
-        annotateSurveyAndEvent();
+    private void removeSurveyAndEvent(Survey survey) {
+        //remove event from annotated event list and from db
+        if (events.containsKey(currentSurvey.getId_survey())) {
+            events.remove(currentSurvey.getId_survey());
+        }
+        currentEvent.delete();
+        //remove survey from list and from db
+        if (surveys.contains(survey)) {
+            surveys.remove(survey);
+        }
+        survey.delete();
     }
 
     /**
@@ -247,7 +336,7 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         eventToUpdate.setFromServer(false);
         eventToUpdate.setOrganisationUnitId(currentSurvey.getOrgUnit().getUid());
         eventToUpdate.setProgramId(currentSurvey.getProgram().getUid());
-        eventToUpdate.setProgramStageId(currentSurvey.getProgram().getProgramStage());
+        eventToUpdate.setProgramStageId(currentSurvey.getProgram().getUid());
         Location lastLocation=getEventLocation();
         //location -> set lat/lng
         if(lastLocation!=null) {
@@ -268,8 +357,8 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         dataValue.setLocalEventId(currentEvent.getLocalId());
         dataValue.setEvent(currentEvent.getEvent());
         dataValue.setProvidedElsewhere(false);
-        dataValue.setStoredBy(getSafeUsername());
-        dataValue.setValue(AUtils.round(ScoreUtils.calculateScoreFromNumDen(result)));
+        dataValue.setStoredBy(getSafeUser());
+        dataValue.setValue(AUtils.round(ScoreRegister.getCompositeScore(compositeScore,currentSurvey.getId_survey(), Constants.PUSH_MODULE_KEY)));
         dataValue.save();
     }
 
@@ -280,8 +369,11 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         dataValue.setLocalEventId(currentEvent.getLocalId());
         dataValue.setEvent(currentEvent.getEvent());
         dataValue.setProvidedElsewhere(false);
-        dataValue.setStoredBy(getSafeUsername());
-        if(value.getOption()!=null){
+        dataValue.setStoredBy(getSafeUser());
+        if(value.getQuestion() != null && value.getQuestion().getOutput() == Constants.DATE){
+            Date valueDate= DateQuestionFormatter.formatDateOutput(value.getValue());
+            dataValue.setValue(DateQuestionFormatter.formatDateToValue(valueDate));
+        }else if(value.getOption()!=null){
             dataValue.setValue(value.getOption().getCode());
         }else{
             dataValue.setValue(value.getValue());
@@ -300,9 +392,9 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         currentEvent.setFromServer(false);
         currentEvent.setOrganisationUnitId(currentSurvey.getOrgUnit().getUid());
         currentEvent.setProgramId(currentSurvey.getProgram().getUid());
-        currentEvent.setProgramStageId(currentSurvey.getProgram().getProgramStage());
+        currentEvent.setProgramStageId(currentSurvey.getProgram().getUid());
         updateEventLocation();
-        Log.d(TAG, "Saving event " + currentEvent.toString());
+        Log.d(TAG, "Saving event " + currentEvent.getUid());
         currentEvent.save();
         return currentEvent;
     }
@@ -313,11 +405,11 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
     private void updateEventDates() {
 
         // NOTE: do not try to set the event creation date. SDK will try to update the event in the next push instead of creating it and that will crash
-        String date=EventExtended.format(currentSurvey.getCompletionDate(), EventExtended.DHIS2_GMT_DATE_FORMAT);
+        String date=EventExtended.format(currentSurvey.getCreationDate(), EventExtended.DHIS2_LONG_DATE_FORMAT);
         currentEvent.setEventDate(date);
-        currentEvent.setDueDate(EventExtended.format(currentSurvey.getScheduleDate(), EventExtended.DHIS2_GMT_DATE_FORMAT));
+        currentEvent.setDueDate(EventExtended.format(currentSurvey.getScheduledDate(), EventExtended.DHIS2_LONG_DATE_FORMAT));
         //Not used
-        currentEvent.setLastUpdated(EventExtended.format(currentSurvey.getUploadDate(), EventExtended.DHIS2_GMT_DATE_FORMAT));
+        currentEvent.setLastUpdated(EventExtended.format(currentSurvey.getUploadDate(), EventExtended.DHIS2_LONG_DATE_FORMAT));
         currentEvent.save();
     }
 
@@ -366,7 +458,7 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
 
         //Updated by user
         if(controlDataElementExistsInServer(updatedUserCode)){
-            addOrUpdateDataValue(updatedUserCode, Session.getUser().getUid());
+            addOrUpdateDataValue(updatedUserCode, getSafeUsername());
         }
 
         //Forward order
@@ -374,9 +466,53 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
             addOrUpdateDataValue(forwardOrderCode, context.getString(R.string.forward_order_value));
         }
 
+        //Overall score
+        if(controlDataElementExistsInServer(overallScoreCode) && survey.hasMainScore())
+            buildAndSaveDataValue(overallScoreCode, survey.getMainScore().toString());
+
         //Forward order
         if(controlDataElementExistsInServer(pushDeviceCode)) {
             addOrUpdateDataValue(pushDeviceCode, Session.getPhoneMetaData().getPhone_metaData() + "###" + AUtils.getCommitHash(context));
+        }
+
+        //MainScoreUID
+        if(controlDataElementExistsInServer(mainScoreClassCode) && survey.hasMainScore()) {
+            addOrUpdateDataValue(mainScoreClassCode, survey.getType());
+        }
+
+        //MainScore A
+        if(controlDataElementExistsInServer(mainScoreACode) && survey.hasMainScore()) {
+            addOrUpdateDataValue(mainScoreACode, survey.isTypeA() ? "true" : "false");
+        }
+
+        //MainScore B
+        if(controlDataElementExistsInServer(mainScoreBCode) && survey.hasMainScore()) {
+            addOrUpdateDataValue(mainScoreBCode, survey.isTypeB() ? "true" : "false");
+        }
+
+        //MainScoreC
+        if(controlDataElementExistsInServer(mainScoreCCode) && survey.hasMainScore()) {
+            addOrUpdateDataValue(mainScoreCCode, survey.isTypeC() ? "true" : "false");
+        }
+
+        //Forward Order
+        if(controlDataElementExistsInServer(forwardOrderCode)) {
+            addOrUpdateDataValue(forwardOrderCode, context.getString(R.string.forward_order_value));
+        }
+
+        //Push Device
+        if(controlDataElementExistsInServer(pushDeviceCode)) {
+            addOrUpdateDataValue(pushDeviceCode, Session.getPhoneMetaData().getPhone_metaData() + "###" + AUtils.getCommitHash(context));
+        }
+
+        //Overall productivity
+        if(controlDataElementExistsInServer(overallProductivityCode)) {
+            addOrUpdateDataValue(overallProductivityCode, Integer.toString(OrgUnitProgramRelation.getProductivity(survey)));
+        }
+
+        //Next assessment
+        if(controlDataElementExistsInServer(nextAssessmentCode)) {
+            addOrUpdateDataValue(nextAssessmentCode, EventExtended.format(SurveyPlanner.getInstance().findScheduledDateBySurvey(survey), EventExtended.AMERICAN_DATE_FORMAT));
         }
     }
 
@@ -418,7 +554,7 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         dataValue.setLocalEventId(currentEvent.getLocalId());
         dataValue.setEvent(currentEvent.getEvent());
         dataValue.setProvidedElsewhere(false);
-        dataValue.setStoredBy(getSafeUsername());
+        dataValue.setStoredBy(getSafeUser());
         dataValue.setValue(value);
         dataValue.save();
     }
@@ -430,6 +566,7 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
      */
     private void updateSurvey(List<CompositeScore> compositeScores, float idSurvey, String module){
         currentSurvey.setMainScore(ScoreRegister.calculateMainScore(compositeScores, idSurvey, module));
+        currentSurvey.setStatus(Constants.SURVEY_SENT);
         currentSurvey.setEventUid(currentEvent.getUid());
     }
 
@@ -444,6 +581,10 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
             throw new Exception(context.getString(R.string.dialog_error_push_no_location_and_required));
         }
 
+        //location -> set lat/lng
+        currentEvent.setLatitude(lastLocation.getLatitude());
+        currentEvent.setLongitude(lastLocation.getLongitude());
+
         return lastLocation;
     }
 
@@ -452,7 +593,7 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
      */
     private void annotateSurveyAndEvent() {
         surveys.add(currentSurvey);
-        currentEvent.setLastUpdated(EventExtended.format(uploadedDate, EventExtended.DHIS2_GMT_DATE_FORMAT));
+        currentEvent.setLastUpdated(EventExtended.format(uploadedDate, EventExtended.DHIS2_LONG_DATE_FORMAT));
         events.put(currentSurvey.getId_survey(),currentEvent);
         Log.d(TAG, String.format("%d surveys converted so far", surveys.size()));
     }
@@ -463,48 +604,65 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
     public void saveSurveyStatus(Map<Long,ImportSummary> importSummaryMap){
         for(int i=0;i<surveys.size();i++){
             Survey iSurvey=surveys.get(i);
+
+            //Sets the survey status as quarantine to prevent wrong importSummaries (F.E. in
+            // network failures).
+            //This survey will be checked again in the future push to prevent the duplicates
+            // in the server.
+            iSurvey.setStatus(Constants.SURVEY_QUARANTINE);
+            Log.d(TAG, "saveSurveyStatus: Starting saving survey Set Survey status as QUARANTINE"
+                    + iSurvey.getId_survey() + " eventuid: " + iSurvey.getEventUid());
+            iSurvey.save();
+
             Event iEvent=events.get(iSurvey.getId_survey());
             ImportSummary importSummary=importSummaryMap.get(iEvent.getLocalId());
             FailedItem failedItem= EventExtended.hasConflict(iEvent.getLocalId());
 
-            //No errors -> Save and next
-            if(!hasImportSummaryErrors(importSummary) && failedItem==null){
-                saveSurveyFromImportSummary(iSurvey);
-                continue;
-            }
 
-            if(importSummary==null)
-                rollbackSurvey(iSurvey);
-            else
-                Log.d(TAG, importSummary.toString());
-            //Some error happened -> move back to completed
-            if(failedItem!=null) {
-                rollbackSurvey(iSurvey);
-                List<String> failedUids=getFailedUidQuestion(failedItem.getErrorMessage());
-                for(String uid:failedUids) {
-                    Log.d(TAG, "PUSH process...Conflict in "+uid+" dataelement pushing survey: "+iSurvey.getId_survey());
+            //If the importSummary has a failedItem the survey was saved in the server but
+            // never resend, the survey is saved as survey in conflict.
+            if (failedItem != null) {
+                Log.d(TAG, "saveSurveyStatus: Faileditem not null " + iSurvey.getId_survey());
+                List<String> failedUids = getFailedUidQuestion(failedItem.getErrorMessage());
+                for (String uid : failedUids) {
+                    Log.d(TAG, "saveSurveyStatus: PUSH process...Conflict in " + uid
+                            + " dataelement pushing survey: "
+                            + iSurvey.getId_survey());
                     iSurvey.saveConflict(uid);
                     iSurvey.setStatus(Constants.SURVEY_CONFLICT);
                 }
                 iSurvey.save();
+                continue;
             }
 
-            //XXX Whats this?
-            if(iSurvey.getStatus()!=Constants.SURVEY_CONFLICT && ImportSummary.SUCCESS.equals(importSummary.getStatus())) {
-                if(iEvent.getEventDate()==null || iEvent.getEventDate().equals("")) {
-                    //the event is invalid. The event will be pushed but we need inform to the user.
-                    DashboardActivity.showException(context.getString(R.string.error_message), String.format(context.getString(R.string.error_message_push), iEvent.getEvent()));
+            if (importSummary == null) {
+                Log.d(TAG, "saveSurveyStatus: importSummary null " + iSurvey.getId_survey());
+                //Saved as quarantine
+                continue;
+            } else {
+                try {
+                    Log.d(TAG, "saveSurveyStatus: " + importSummary.toString());
+                }catch (NullPointerException e){
+                    e.printStackTrace();
+                }
+            }
+
+            //No errors -> Save and next
+            if (!hasImportSummaryErrors(importSummary)) {
+                Log.d(TAG, "saveSurveyStatus: importSummary without errors and status ok "
+                        + iSurvey.getId_survey());
+                if (iEvent.getEventDate() == null || iEvent.getEventDate().equals("")) {
+                    //If eventdate is null the event is invalid. The event is sent but we need
+                    // inform to the user.
+                    DashboardActivity.showException(context.getString(R.string.error_message),
+                            String.format(context.getString(R.string.error_message_push),
+                                    iEvent.getEvent()));
                 }
                 saveSurveyFromImportSummary(iSurvey);
-                Log.d(TAG, "PUSH process...Survey uploaded: " + iSurvey.getId_survey());
+                continue;
             }
-        }
-    }
 
-    private void rollbackSurvey(Survey survey){
-        survey.setStatus(Constants.SURVEY_COMPLETED);
-        survey.setEventUid(originalSurveysUIDs.get(survey.getId_survey()));
-        survey.save();
+        }
     }
 
     private void saveSurveyFromImportSummary(Survey iSurvey) {
@@ -514,6 +672,19 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
         iSurvey.save();
 
         Log.d(TAG, "PUSH process...OK. Survey saved");
+    }
+
+    /**
+     * Checks whether the given event contains errors in SDK FailedItem table or has been successful.
+     * If not return null, it is becouse this item had a conflict.
+     * @param localId
+     * @return
+     */
+    private FailedItem hasConflict(long localId){
+        return  new Select()
+                .from(FailedItem.class)
+                .where(Condition.column(FailedItem$Table.ITEMID)
+                        .is(localId)).querySingle();
     }
 
     /**
@@ -551,20 +722,35 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
     /**
      * Checks whether the given importSummary contains errors or has been successful.
      * An import with 0 importedItems is an error too.
-     * @param importSummary
-     * @return
      */
-    private boolean hasImportSummaryErrors(ImportSummary importSummary){
-        if(importSummary==null){
+    private boolean hasImportSummaryErrors(ImportSummary importSummary) {
+        if (importSummary == null) {
             return true;
         }
 
-        if(importSummary.getImportCount()==null){
+        if (importSummary.getImportCount() == null) {
             return true;
         }
-        return importSummary.getImportCount().getImported()==0;
+        if (importSummary.getStatus() == null) {
+            return true;
+        }
+        if (!importSummary.getStatus().equals(ImportSummary.SUCCESS)) {
+            return true;
+        }
+        return importSummary.getImportCount().getImported() == 0;
     }
 
+    /**
+     * Returns the name of the username avoiding NPE
+     * @return
+     */
+    private String getSafeUser(){
+        User user = Session.getUser();
+        if(user!=null){
+            return user.getName();
+        }
+        return "";
+    }
     /**
      * Returns the name of the username avoiding NPE
      * @return
@@ -572,8 +758,17 @@ public class ConvertToSDKVisitor implements IConvertToSDKVisitor {
     private String getSafeUsername(){
         User user = Session.getUser();
         if(user!=null){
-            return user.getName();
+            return user.getUsername();
         }
         return "";
+    }
+
+    public void setSurveysAsQuarantine() {
+        for (Survey survey : surveys) {
+            Log.d(TAG, "Set Survey status as QUARANTINE" + survey.getId_survey());
+            Log.d(TAG, "Set Survey status as QUARANTINE" + survey.toString());
+            survey.setStatus(Constants.SURVEY_QUARANTINE);
+            survey.save();
+        }
     }
 }

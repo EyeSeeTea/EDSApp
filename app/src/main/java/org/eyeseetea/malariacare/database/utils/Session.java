@@ -25,6 +25,7 @@ import android.widget.ListView;
 
 import com.raizlabs.android.dbflow.structure.BaseModel;
 
+import org.eyeseetea.malariacare.BaseActivity;
 import org.eyeseetea.malariacare.database.model.Survey;
 import org.eyeseetea.malariacare.database.model.User;
 import org.eyeseetea.malariacare.database.utils.metadata.PhoneMetaData;
@@ -71,7 +72,7 @@ public class Session {
     /**
      * Adapters that hold dashboard sent and unset surveys adapters
      */
-    private static IDashboardAdapter adapterUnsent, adapterSent;
+    private static IDashboardAdapter adapterUnsent, adapterSent, adapterOrgUnit;
 
     public static ListView listViewUnsent, listViewSent;
 
@@ -105,6 +106,14 @@ public class Session {
         Session.user = user;
     }
 
+    public static IDashboardAdapter getAdapterOrgUnit() {
+        return adapterOrgUnit;
+    }
+
+    public static void setAdapterOrgUnit(IDashboardAdapter adapterOrgUnit) {
+        Session.adapterOrgUnit = adapterOrgUnit;
+    }
+
     public static IDashboardAdapter getAdapterUnsent() {
         return adapterUnsent;
     }
@@ -129,10 +138,7 @@ public class Session {
      * Closes the current session when the user logs out
      */
     public static void logout(){
-        List<Survey> surveys = Survey.getAllUnsentUnplannedSurveys();
-        for (Survey survey : surveys) {
-            survey.delete();
-        }
+        BaseActivity.wipeData();
         if(user!=null){
             user.delete();
             user=null;

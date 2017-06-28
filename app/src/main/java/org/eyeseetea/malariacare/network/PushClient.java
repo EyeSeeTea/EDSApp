@@ -75,13 +75,8 @@ public class PushClient {
     }
 
     public void pushSDK() {
-        //No network -> Done
-        if (!AUtils.isNetworkAvailable() || PushController.getInstance().isPushing())
-            AlarmPushReceiver.isDone();
-        else {
-            //Push via sdk
-            PushController.getInstance().push(PreferencesState.getInstance().getContext(), surveys);
-        }
+        //Push via sdk
+        PushController.getInstance().push(PreferencesState.getInstance().getContext(), surveys);
     }
 
     public PushResult pushAPI() {
