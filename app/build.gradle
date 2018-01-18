@@ -68,7 +68,7 @@ android {
     productFlavors {
         eds {
             applicationId "org.eyeseetea.malariacare.eds2"
-            versionName "2.1.2"
+            versionName "2.1.4"
             minSdkVersion 15
             targetSdkVersion 23
         }
